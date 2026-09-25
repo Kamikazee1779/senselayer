@@ -4,7 +4,7 @@ import {
   CatchupRequestSchema, CatchupAckRequestSchema,
   AttentionAckRequestSchema, AttentionAckParamsSchema, ResetRequestSchema,
 } from '@senselayer/shared';
-import { InMemoryStore } from './state.js';
+import { InMemoryStore, SemanticBatchError } from './state.js';
 
 async function readBody(request: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
@@ -32,7 +32,7 @@ export function createApp(store = new InMemoryStore()) {
       }
       const body = await readBody(request);
       if (path === '/transcript') {
-        send(response, 200, store.ingest(body));
+        send(response, 200, await store.submit(body));
       } else if (path === '/catchup') {
         CatchupRequestSchema.parse(body);
         send(response, 200, store.catchup());
@@ -52,7 +52,9 @@ export function createApp(store = new InMemoryStore()) {
         send(response, 404, { error: 'Not found' });
       }
     } catch (error) {
-      if (error instanceof ZodError || error instanceof SyntaxError) {
+      if (error instanceof SemanticBatchError) {
+        send(response, 503, { error: error.message });
+      } else if (error instanceof ZodError || error instanceof SyntaxError) {
         send(response, 400, { error: 'Invalid request' });
       } else {
         send(response, 500, { error: 'Internal server error' });

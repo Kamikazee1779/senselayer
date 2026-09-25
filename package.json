@@ -8,6 +8,7 @@
     "dev": "pnpm --parallel --filter @senselayer/web --filter @senselayer/server dev",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
+    "replay": "tsx apps/server/src/replay.ts",
     "build": "pnpm --filter @senselayer/web build"
   },
   "devDependencies": {

@@ -1,0 +1,14 @@
+{
+  "batches": [
+    { "events": [{ "speaker": "Ari", "text": "Topic: Demo deployment" }] },
+    { "events": [{ "speaker": "Sam", "text": "Maybe we could use the staging server." }] },
+    { "events": [{ "speaker": "Ari", "text": "Decision: Use staging." }] },
+    { "events": [{ "speaker": "Ari", "text": "Decision: Use staging." }] },
+    { "events": [{ "speaker": "Ari", "text": "Correction: Use staging. => Use production." }] },
+    { "events": [{ "speaker": "Sam", "text": "Emilio will handle deployment." }] },
+    { "events": [{ "speaker": "Sam", "text": "Emilio, can you review the demo?" }] },
+    { "events": [{ "speaker": "Ari", "text": "Question: Who will present?" }] },
+    { "events": [{ "speaker": "Sam", "text": "Answer: Who will present? => Sam will present." }] },
+    { "events": [{ "speaker": "Ari", "text": "Answer: Emilio, can you review the demo? => Emilio explicitly confirmed the review." }] }
+  ]
+}
