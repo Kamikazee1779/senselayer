@@ -1,0 +1,14 @@
+{
+  "batches": [
+    {
+      "events": [{ "speaker": "Sam", "text": "Please confirm you can review the demo." }],
+      "ops": [{ "op": "add_user_request", "text": "Confirm you can review the demo.", "event_ids": ["sl-1"] }]
+    }
+  ],
+  "expected": {
+    "topic": null,
+    "decisions": [],
+    "questions": [],
+    "user_requests": [{ "id": "sl-2", "created_at": "2026-09-25T12:00:00.000Z", "text": "Confirm you can review the demo.", "event_ids": ["sl-1"], "acknowledged_at": null }]
+  }
+}

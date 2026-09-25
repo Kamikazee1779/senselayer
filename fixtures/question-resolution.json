@@ -1,0 +1,21 @@
+{
+  "batches": [
+    {
+      "events": [{ "speaker": "Ari", "text": "Who will present?" }],
+      "ops": [{ "op": "open_question", "text": "Who will present?", "event_ids": ["sl-1"] }]
+    },
+    {
+      "events": [{ "speaker": "Sam", "text": "I will present." }],
+      "ops": [{ "op": "resolve_question", "question_id": "sl-2", "text": "Sam will present.", "event_ids": ["sl-3"] }]
+    }
+  ],
+  "expected": {
+    "topic": null,
+    "decisions": [],
+    "questions": [{
+      "id": "sl-2", "created_at": "2026-09-25T12:00:00.000Z", "text": "Who will present?", "event_ids": ["sl-1"],
+      "resolution": { "resolved_at": "2026-09-25T12:00:00.000Z", "text": "Sam will present.", "event_ids": ["sl-3"] }
+    }],
+    "user_requests": []
+  }
+}

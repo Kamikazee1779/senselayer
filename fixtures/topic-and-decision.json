@@ -1,0 +1,17 @@
+{
+  "batches": [
+    {
+      "events": [{ "speaker": "Ari", "text": "Let's discuss the demo. We will use recorded audio." }],
+      "ops": [
+        { "op": "set_topic", "text": "Demo", "event_ids": ["sl-1"] },
+        { "op": "add_decision", "text": "Use recorded audio for the demo.", "event_ids": ["sl-1"] }
+      ]
+    }
+  ],
+  "expected": {
+    "topic": { "text": "Demo", "event_ids": ["sl-1"] },
+    "decisions": [{ "id": "sl-2", "created_at": "2026-09-25T12:00:00.000Z", "text": "Use recorded audio for the demo.", "event_ids": ["sl-1"] }],
+    "questions": [],
+    "user_requests": []
+  }
+}
