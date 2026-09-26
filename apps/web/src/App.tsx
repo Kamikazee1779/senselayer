@@ -144,7 +144,38 @@ export function App() {
   const total = activeReplay === null ? 0 : replays[activeReplay]!.batches.length;
   const replayState = activeReplay === null ? 'Replay ready' : playing ? 'Replay playing' : batch === total ? 'Replay complete' : 'Replay paused';
 
-  return <>
+  async function enableNotifications() {
+    if (!('Notification' in window)) {
+      setNotice('Notifications are not supported in this browser.');
+      return;
+    }
+
+    const permission = await Notification.requestPermission();
+
+    if (permission === 'granted') {
+      setNotice('Notifications enabled.');
+    } else {
+      setNotice(`Notification permission: ${permission}`);
+    }
+  }
+
+  async function sendTestNotification() {
+    if (Notification.permission !== 'granted') {
+      setNotice('Enable notifications first.');
+      return;
+    }
+
+    const registration = await navigator.serviceWorker.ready;
+
+    await registration.showNotification('SenseLayer · You’re needed', {
+      body: 'Someone in the conversation is asking for you.',
+      tag: 'senselayer-test'
+    });
+
+    setNotice('Test notification sent.');
+  }  
+
+return <>
     <a className="skip-link" href="#conversation">Skip to conversation</a>
     <div className="shell">
       <header className="app-header">
