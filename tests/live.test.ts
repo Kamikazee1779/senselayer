@@ -7,6 +7,7 @@ import { createTranscriptionSession } from '../apps/server/src/transcription.js'
 import { userConfig } from '../apps/server/src/config.js';
 import { createApp } from '../apps/server/src/server.js';
 import { InMemoryStore } from '../apps/server/src/state.js';
+import { SpeakerIdentity } from '../apps/server/src/speakerIdentity.js';
 import { TranscriptResponseSchema } from '../packages/shared/src/index.js';
 
 test('live adapter emits only ordered final utterances, once, with application metadata', () => {
@@ -21,6 +22,63 @@ test('live adapter emits only ordered final utterances, once, with application m
   assert.deepEqual(adapter.receive(second), []);
   adapter.receive({ type: 'input_audio_buffer.committed', item_id: 'empty' });
   assert.deepEqual(adapter.receive({ type: second.type, item_id: 'empty', transcript: ' ' }), []);
+});
+
+test('audio intervals follow committed items, even when final words arrive late and out of order', () => {
+  const adapter = new FinalTranscripts('capture');
+  const first = { sessionId: 'capture', startMs: 1000, endMs: 7000 };
+  const second = { sessionId: 'capture', startMs: 8000, endMs: 14000 };
+  adapter.recordCommit(first);
+  adapter.recordCommit(second);
+  for (const item_id of ['a', 'b']) adapter.receive({ type: 'input_audio_buffer.committed', item_id });
+  const finalType = 'conversation.item.input_audio_transcription.completed';
+  assert.deepEqual(adapter.receive({ type: finalType, item_id: 'b', transcript: 'Second speaker' }), []);
+  const results = adapter.receive({ type: finalType, item_id: 'a', transcript: 'First speaker' });
+  assert.deepEqual(results.map(event => event.audio), [first, second]);
+  assert.ok(results.every(event => Date.parse(event.receivedAt) > second.endMs));
+  adapter.recordCommit();
+  adapter.receive({ type: 'input_audio_buffer.committed', item_id: 'untimed' });
+  assert.equal(adapter.receive({ type: finalType, item_id: 'untimed', transcript: 'No timing' })[0]?.audio, undefined);
+});
+
+test('optional speaker capture enriches live text, preserves replay, and resets with the session', async t => {
+  const store = new InMemoryStore();
+  const speakers = new SpeakerIdentity({ env: {}, enabled: true });
+  const controls: unknown[] = [];
+  t.mock.method(speakers, 'start', (id: string, label: string) => { controls.push(['start', id, label]); });
+  t.mock.method(speakers, 'heartbeat', (id: string) => { controls.push(['heartbeat', id]); });
+  t.mock.method(speakers, 'stop', (id: string) => { controls.push(['stop', id]); });
+  t.mock.method(speakers, 'reset', () => { controls.push(['reset']); });
+  const audio = { sessionId: 'capture', startMs: 1000, endMs: 7000 };
+  t.mock.method(speakers, 'identify', (interval: unknown) => { assert.deepEqual(interval, audio); return 'Ivan'; });
+  const server = createApp(store, async () => 'v=0\r\nanswer', speakers);
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  t.after(() => new Promise<void>(resolve => { server.close(() => resolve()); server.closeAllConnections(); }));
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const post = (path: string, body: unknown) => fetch(url + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const handshake = await post('/transcription/session', { sdp: 'v=0\r\noffer' });
+  assert.equal((await handshake.json()).speakerIdentity, true);
+  assert.equal(controls.length, 0, 'a handshake alone never opens another microphone');
+  for (const action of ['start', 'heartbeat', 'stop']) {
+    const response = await post('/speaker/capture', { action, sessionId: 'capture', ...(action === 'start' ? { deviceLabel: 'Trust GXT 232' } : {}) });
+    assert.equal(response.status, 200);
+  }
+  assert.deepEqual(controls, [['start', 'capture', 'Trust GXT 232'], ['heartbeat', 'capture'], ['stop', 'capture']]);
+  const live = { id: 'live-capture-1', seq: 1, text: 'The words arrive later.', final: true, source: 'live', receivedAt: '2026-09-26T12:00:00.000Z', audio };
+  assert.equal((await post('/transcript', { ...live, audio: { ...audio, endMs: 0 } })).status, 400);
+  const result = TranscriptResponseSchema.parse(await (await post('/transcript', live)).json());
+  assert.equal(result.new_events[0]?.speaker, 'Ivan');
+  assert.deepEqual(result.new_events[0]?.audio, audio);
+  t.mock.method(speakers, 'identify', () => 'Emilio');
+  const repeated = await post('/transcript', live);
+  assert.equal(repeated.status, 200);
+  assert.deepEqual(TranscriptResponseSchema.parse(await repeated.json()).new_events, []);
+  assert.equal(store.getTranscript()[0]?.speaker, 'Ivan', 'later evidence cannot change an already saved final event');
+  await post('/transcript', { events: [{ speaker: 'Marta', text: 'Replay keeps its own name.' }] });
+  assert.equal(store.getTranscript()[1]?.speaker, 'Marta');
+  await post('/reset', {});
+  assert.deepEqual(controls.at(-1), ['reset']);
+  assert.equal(store.getTranscript().length, 0);
 });
 
 test('OpenAI handshake uses transcription-only model and backend key with Emilio guidance', async () => {

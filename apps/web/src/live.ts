@@ -1,4 +1,4 @@
-import { LiveTranscriptSchema, type LiveTranscript } from '@senselayer/shared';
+import { LiveTranscriptSchema, type AudioInterval, type LiveTranscript } from '@senselayer/shared';
 
 export type MicrophoneState = 'disconnected' | 'connecting' | 'listening' | 'error';
 
@@ -10,13 +10,18 @@ export class FinalTranscripts {
   private known = new Set<string>();
   private delivered = new Set<string>();
   private sequence = 0;
+  private pendingAudio: (AudioInterval | undefined)[] = [];
+  private audioByItem = new Map<string, AudioInterval>();
   constructor(private readonly sessionId: string) {}
+  recordCommit(audio?: AudioInterval) { this.pendingAudio.push(audio); }
   receive(event: Record<string, unknown>): LiveTranscript[] {
     if (typeof event.item_id !== 'string') return [];
     const id = event.item_id;
     if (this.delivered.has(id)) return [];
     if (event.type === 'input_audio_buffer.committed' && !this.known.has(id)) {
       this.known.add(id); this.order.push(id);
+      const audio = this.pendingAudio.shift();
+      if (audio) this.audioByItem.set(id, audio);
     } else if (event.type === 'conversation.item.input_audio_transcription.completed' && typeof event.transcript === 'string') {
       this.completed.set(id, event.transcript.trim());
     }
@@ -26,9 +31,12 @@ export class FinalTranscripts {
       this.delivered.add(item);
       const text = this.completed.get(item)!;
       this.completed.delete(item);
+      const audio = this.audioByItem.get(item);
+      this.audioByItem.delete(item);
       if (text) ready.push(LiveTranscriptSchema.parse({
         id: `live-${this.sessionId}-${++this.sequence}`, seq: this.sequence,
         text, final: true, source: 'live', receivedAt: new Date().toISOString(),
+        ...(audio ? { audio } : {}),
       }));
     }
     return ready;
@@ -47,10 +55,17 @@ export class LiveMicrophone {
   private stopping = false;
   private speech = false;
   private lastVoice = 0;
+  private chunkStartedMs = 0;
+  private captureStoppedMs: number | undefined;
   private pending = 0;
   private completed = new Set<string>();
   private queue = Promise.resolve();
-  private finals = new FinalTranscripts(crypto.randomUUID());
+  private sessionId = crypto.randomUUID();
+  private finals = new FinalTranscripts(this.sessionId);
+  private speakerEnabled = false;
+  private speakerCapture = false;
+  private speakerTimer: ReturnType<typeof setInterval> | undefined;
+  private onPageHide = () => this.dispose();
 
   constructor(
     private readonly status: (state: MicrophoneState, error?: string) => void,
@@ -59,6 +74,7 @@ export class LiveMicrophone {
 
   async start() {
     this.status('connecting');
+    window.addEventListener('pagehide', this.onPageHide);
     try {
       if (!navigator.mediaDevices?.getUserMedia || !window.RTCPeerConnection) {
         throw new Error('Microphone transcription requires Chrome on localhost or HTTPS.');
@@ -67,6 +83,7 @@ export class LiveMicrophone {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       if (this.closed) { stream.getTracks().forEach(track => track.stop()); return; }
       this.stream = stream;
+      this.chunkStartedMs = Date.now();
       this.audio = new AudioContext();
       await this.audio.resume();
       if (this.closed) return;
@@ -124,7 +141,13 @@ export class LiveMicrophone {
         const body = await response.json().catch(() => ({})) as { error?: string };
         throw new Error(body.error ?? 'Could not start live transcription.');
       }
-      const answer = await response.json() as { sdp: string };
+      const answer = await response.json() as { sdp: string; speakerIdentity?: boolean };
+      // Independent capture is only valid on the same computer as the browser.
+      // Remote/mobile clients keep their ordinary transcript without server-mic names.
+      if (!this.closed && !this.stopping && answer.speakerIdentity && ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname)) {
+        this.speakerEnabled = true;
+        void this.startSpeaker(stream.getAudioTracks()[0]?.label ?? '');
+      }
       if (!this.closed) await peer.setRemoteDescription({ type: 'answer', sdp: answer.sdp });
     } catch (error) {
       if (this.closed) return;
@@ -138,13 +161,22 @@ export class LiveMicrophone {
 
   private commit() {
     if (this.channel?.readyState !== 'open' || !this.speech) return;
+    const endMs = Math.max(this.chunkStartedMs + 1, this.captureStoppedMs ?? Date.now());
+    // Include the whole committed chunk, including quiet speech. RMS triggers a
+    // commit but cannot safely define which words belong to a speaker.
+    this.finals.recordCommit(this.speakerEnabled ? {
+      sessionId: this.sessionId, startMs: this.chunkStartedMs, endMs,
+    } : undefined);
     this.channel.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
+    this.chunkStartedMs = endMs;
     this.pending++; this.speech = false;
   }
 
   async stop() {
     this.stopping = true;
     clearInterval(this.timer);
+    this.captureStoppedMs = Date.now();
+    this.stopSpeaker();
     this.stream?.getTracks().forEach(track => track.stop());
     if (this.channel?.readyState === 'open') {
       // Let the final audio packets arrive before committing the trailing turn.
@@ -163,9 +195,34 @@ export class LiveMicrophone {
     this.dispose(); this.status('error', `${message} Demo remains available.`);
   }
 
+  private async speakerControl(action: 'start' | 'heartbeat' | 'stop', deviceLabel?: string) {
+    try {
+      await fetch('/api/speaker/capture', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, keepalive: true,
+        body: JSON.stringify({ action, sessionId: this.sessionId, ...(deviceLabel !== undefined ? { deviceLabel } : {}) }),
+        signal: AbortSignal.timeout(1500),
+      });
+    } catch { /* Optional speaker recognition must never interrupt the words. */ }
+  }
+
+  private async startSpeaker(deviceLabel: string) {
+    this.speakerCapture = true;
+    await this.speakerControl('start', deviceLabel);
+    // Stop again if a stop request overtook the start while it was in flight.
+    if (this.closed || this.stopping) { await this.speakerControl('stop'); return; }
+    this.speakerTimer = setInterval(() => { void this.speakerControl('heartbeat'); }, 1000);
+  }
+
+  private stopSpeaker() {
+    clearInterval(this.speakerTimer);
+    if (this.speakerCapture) { this.speakerCapture = false; void this.speakerControl('stop'); }
+  }
+
   dispose() {
     this.closed = true;
     this.abort.abort();
+    this.stopSpeaker();
+    window.removeEventListener('pagehide', this.onPageHide);
     clearInterval(this.timer); clearTimeout(this.timeout);
     this.stream?.getTracks().forEach(track => track.stop());
     this.channel?.close(); this.peer?.close();

@@ -13,3 +13,12 @@ dist/
 Thumbs.db
 .vscode/
 .idea/
+
+# Local speaker model, biometric profiles and Python environment
+speaker-enrollments/
+tools/speaker-recognition/.venv/
+tools/speaker-recognition/models/
+tools/speaker-recognition/profiles/
+tools/speaker-recognition/enrollments/
+tools/speaker-recognition/**/*.wav
+tools/speaker-recognition/**/__pycache__/

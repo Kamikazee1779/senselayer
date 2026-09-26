@@ -5,6 +5,14 @@ export const TimestampSchema = z.string().datetime();
 const TextSchema = z.string().trim().min(1);
 const EvidenceSchema = z.array(IdSchema).min(1);
 
+// Local capture times, independent of when a transcription response arrives.
+export const AudioIntervalSchema = z.object({
+  sessionId: z.string().min(1).max(128),
+  startMs: z.number().finite().nonnegative(),
+  endMs: z.number().finite().nonnegative(),
+}).strict().refine(value => value.endMs > value.startMs, 'Audio interval must have positive duration');
+export type AudioInterval = z.infer<typeof AudioIntervalSchema>;
+
 export const TranscriptEventSchema = z.object({
   id: IdSchema,
   timestamp: TimestampSchema,
@@ -14,6 +22,7 @@ export const TranscriptEventSchema = z.object({
   final: z.literal(true).optional(),
   source: z.literal('live').optional(),
   receivedAt: TimestampSchema.optional(),
+  audio: AudioIntervalSchema.optional(),
 }).strict();
 export type TranscriptEvent = z.infer<typeof TranscriptEventSchema>;
 
@@ -25,6 +34,7 @@ export const LiveTranscriptSchema = z.object({
   final: z.literal(true),
   source: z.literal('live'),
   receivedAt: TimestampSchema,
+  audio: AudioIntervalSchema.optional(),
 }).strict();
 export type LiveTranscript = z.infer<typeof LiveTranscriptSchema>;
 

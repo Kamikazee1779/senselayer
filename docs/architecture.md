@@ -87,6 +87,7 @@ All bodies/responses are JSON. Shared schemas are in `packages/shared/src/contra
 | `POST /attention/:id/ack` | Mark a request seen; retain unfinished questions/tasks |
 | `POST /attention/:id/complete` | Explicitly complete a request |
 | `POST /transcription/session` | Exchange SDP; credentials remain on the server |
+| `POST /speaker/capture` | Optional local speaker capture: `start` with session ID/device label, `heartbeat`, or `stop` |
 | `POST /reset` | Clear the shared session and invalidate old in-flight results |
 
 Invalid input returns 400; unknown resources return 404. Completing a question or bare attention instead of a task returns 409. A failed semantic interpretation after accepted text is reported through processing status, rather than turning accepted speech into an HTTP failure.
@@ -94,5 +95,7 @@ Invalid input returns 400; unknown resources return 404. Completing a question o
 ## Configuration and verification
 
 See `.env.example`. `CONTEXT_PROVIDER` selects the semantic adapter. `SENSELAYER_USER_NAME`, `SENSELAYER_USER_ALIASES`, and `SENSELAYER_LANGUAGE` configure the user and speech guidance consistently. English is the rehearsed demo language; the conservative direct-address grammar is not a general multilingual classifier.
+
+`SENSELAYER_SPEAKER_ID_ENABLED=1` enables an independent local Python recognizer, started only by a localhost microphone session. Optional audio interval metadata follows each committed STT item so the server can match historical speaker observations rather than the latest name. Insufficient or conflicting evidence stays `Unknown`; disabled and untimed input keeps `Microphone`. Attribution is fixed at initial ingestion, including on retries. Profiles persist on disk, while reset and failures clear live recognition evidence. Neither the semantic provider nor the reducer depends on the recognizer. See [live transcription](live-stt.md) and [speaker setup](../tools/speaker-recognition/README.md).
 
 Run `pnpm typecheck`, `pnpm test`, `pnpm build`, and `pnpm replay`. With the frontend running, run `pnpm --filter @senselayer/web test:ui`. Browser tests use an isolated mock backend. Real microphone/model acceptance is separate from mocked tests, and usability with Deaf/HoH participants is a separate evaluation again.

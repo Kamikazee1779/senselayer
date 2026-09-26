@@ -3,12 +3,22 @@ import { loadEnvFile } from 'node:process';
 import { createApp } from './server.js';
 import { InMemoryStore } from './state.js';
 import { engineConfig } from './config.js';
+import { SpeakerIdentity } from './speakerIdentity.js';
 
 const envFile = new URL('../../../.env', import.meta.url);
 if (existsSync(envFile)) loadEnvFile(envFile);
 
 const port = Number(process.env.PORT ?? 3001);
 const { provider, user } = engineConfig();
-createApp(new InMemoryStore(undefined, provider, user)).listen(port, '127.0.0.1', () => {
+const speakers = new SpeakerIdentity();
+const server = createApp(new InMemoryStore(undefined, provider, user), undefined, speakers).listen(port, '127.0.0.1', () => {
   console.log(`SenseLayer server: http://127.0.0.1:${port}`);
 });
+
+function shutdown() {
+  speakers.dispose();
+  server.closeAllConnections();
+  server.close();
+}
+process.once('SIGINT', shutdown);
+process.once('SIGTERM', shutdown);
