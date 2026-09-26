@@ -10,8 +10,23 @@ export const TranscriptEventSchema = z.object({
   timestamp: TimestampSchema,
   speaker: TextSchema,
   text: TextSchema,
+  seq: z.number().int().positive().optional(),
+  final: z.literal(true).optional(),
+  source: z.literal('live').optional(),
+  receivedAt: TimestampSchema.optional(),
 }).strict();
 export type TranscriptEvent = z.infer<typeof TranscriptEventSchema>;
+
+// Browser application metadata for finalized microphone text, not model output.
+export const LiveTranscriptSchema = z.object({
+  id: IdSchema,
+  seq: z.number().int().positive(),
+  text: TextSchema,
+  final: z.literal(true),
+  source: z.literal('live'),
+  receivedAt: TimestampSchema,
+}).strict();
+export type LiveTranscript = z.infer<typeof LiveTranscriptSchema>;
 
 export const DecisionSchema = z.object({
   id: IdSchema,

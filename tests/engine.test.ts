@@ -218,7 +218,8 @@ test('finalized replay is idempotent, conflicting IDs and partial events are rej
   await assert.rejects(store.ingestFinalized([{ ...finalized[0]!, text: 'Changed' }]));
   for (const flag of [{ final: false }, { is_final: false }, { partial: true }]) {
     await assert.rejects(store.submit({ events: [{ speaker: 'Ari', text: 'Partial', ...flag }] }));
-    await assert.rejects(store.ingestFinalized([{ ...event('partial'), ...flag }]));
+    // Deliberately bypass static typing to verify the runtime input boundary.
+    await assert.rejects(store.ingestFinalized([{ ...event('partial'), ...flag } as TranscriptEvent]));
   }
   assert.equal(calls, 1);
 });

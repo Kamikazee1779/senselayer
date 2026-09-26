@@ -8,7 +8,7 @@ import { chromium } from 'playwright';
 const base = process.env.UI_BASE_URL ?? 'http://127.0.0.1:5173';
 let browser;
 before(async () => {
-  browser = await chromium.launch({ channel: process.env.UI_BROWSER ?? 'chrome', headless: true });
+  browser = await chromium.launch({ channel: process.env.UI_BROWSER ?? 'chrome', headless: true, args: ['--use-fake-device-for-media-stream'] });
   await mkdir(new URL('../dist/qa/', import.meta.url), { recursive: true });
 });
 after(async () => { await browser?.close(); });
@@ -17,6 +17,117 @@ async function ready(page) {
   await page.waitForFunction(() => !document.querySelector('.missed')?.disabled);
 }
 async function until(page, fn) { await page.waitForFunction(fn); }
+
+test('Chrome microphone permission, final-only live ingestion, stop cleanup and replay fallback (OpenAI mocked)', async () => {
+  const context = await browser.newContext({ permissions: ['microphone'] });
+  const page = await context.newPage();
+  const posts = [];
+  page.on('request', request => { if (request.url().endsWith('/api/transcript')) posts.push(request.postDataJSON()); });
+  await page.route('**/api/transcription/session', route => route.fulfill({ json: { sdp: 'v=0\r\nmock-answer' } }));
+  await page.addInitScript(() => {
+    const realGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    navigator.mediaDevices.getUserMedia = async constraints => {
+      window.micConstraints = constraints;
+      window.micStream = await realGetUserMedia(constraints);
+      return window.micStream;
+    };
+    // Deterministic volume for testing silence/stop commits, with real capture.
+    window.testAudioLevel = 0;
+    const createAnalyser = AudioContext.prototype.createAnalyser;
+    AudioContext.prototype.createAnalyser = function () {
+      const analyser = createAnalyser.call(this);
+      analyser.getFloatTimeDomainData = samples => samples.fill(window.testAudioLevel);
+      return analyser;
+    };
+    // Keep Chrome getUserMedia and AudioContext real; mock only the provider peer.
+    window.sentProviderEvents = [];
+    window.RTCPeerConnection = class {
+      connectionState = 'new';
+      addTrack() {}
+      createDataChannel() {
+        return window.providerChannel = {
+          readyState: 'connecting',
+          send(text) { window.sentProviderEvents.push(JSON.parse(text)); },
+          close() { this.readyState = 'closed'; this.onclose?.(); },
+        };
+      }
+      async createOffer() { return { type: 'offer', sdp: 'v=0\r\nmock-offer' }; }
+      async setLocalDescription() {}
+      async setRemoteDescription() {
+        window.providerChannel.readyState = 'open'; window.providerChannel.onopen();
+      }
+      close() { this.connectionState = 'closed'; }
+    };
+  });
+  try {
+    await page.request.post(`${base}/api/reset`, { data: {} });
+    await ready(page);
+    await page.getByRole('button', { name: 'Start microphone', exact: true }).click();
+    await page.getByText('Microphone: listening', { exact: true }).waitFor();
+    assert.deepEqual(await page.evaluate(() => window.micConstraints), { audio: true });
+    assert.equal(await page.evaluate(() => window.micStream.getAudioTracks()[0].readyState), 'live');
+    const emit = event => page.evaluate(event => window.providerChannel.onmessage({ data: JSON.stringify(event) }), event);
+    await emit({ type: 'conversation.item.input_audio_transcription.delta', item_id: 'item-1', delta: 'Emilio, can you' });
+    assert.equal(posts.length, 0);
+    assert.equal(await page.locator('.utterances li').count(), 0);
+    await emit({ type: 'input_audio_buffer.committed', item_id: 'item-1' });
+    const final = { type: 'conversation.item.input_audio_transcription.completed', item_id: 'item-1', transcript: 'Emilio, can you review the demo?' };
+    await emit(final);
+    await page.locator('.utterances li').waitFor();
+    await page.locator('.priority-card').waitFor();
+    assert.equal(posts.length, 1);
+    assert.deepEqual(Object.keys(posts[0]).sort(), ['id', 'seq', 'text', 'final', 'source', 'receivedAt'].sort());
+    assert.equal(posts[0].source, 'live'); assert.equal(posts[0].final, true);
+    assert.equal(posts[0].text, final.transcript);
+    await emit(final);
+    assert.equal(posts.length, 1);
+    await page.evaluate(() => { window.testAudioLevel = 0.1; });
+    await page.waitForTimeout(150);
+    await page.evaluate(() => { window.testAudioLevel = 0; });
+    await page.waitForFunction(() => window.sentProviderEvents.some(event => event.type === 'input_audio_buffer.commit'));
+    await emit({ type: 'input_audio_buffer.committed', item_id: 'item-2' });
+    await emit({ ...final, item_id: 'item-2', transcript: 'A second final utterance.' });
+    await page.getByText('A second final utterance.', { exact: true }).waitFor();
+    // Provider failure immediately releases the actual Chrome capture track.
+    await emit({ type: 'error', error: { message: 'test failure' } });
+    await page.getByText('Microphone: error', { exact: true }).waitFor();
+    assert.equal(await page.evaluate(() => window.micStream.getAudioTracks()[0].readyState), 'ended');
+    await page.locator('.demo-controls > summary').click();
+    await page.getByRole('button', { name: 'Start replay', exact: true }).click();
+    await page.getByRole('button', { name: 'Pause', exact: true }).click();
+    await page.getByRole('button', { name: 'Next batch', exact: true }).click();
+    await page.locator('.utterances li').waitFor();
+    assert.ok(posts.at(-1).events, 'replay still uses its existing request shape');
+    // Stop during speech commits and drains the trailing final before closing.
+    await until(page, () => !document.querySelector('.missed').disabled);
+    await page.getByRole('button', { name: 'Start microphone', exact: true }).click();
+    await page.getByText('Microphone: listening', { exact: true }).waitFor();
+    await page.evaluate(() => { window.testAudioLevel = 0.1; window.sentProviderEvents = []; });
+    await page.waitForTimeout(150);
+    await page.getByRole('button', { name: 'Stop microphone', exact: true }).click();
+    await page.waitForFunction(() => window.sentProviderEvents.some(event => event.type === 'input_audio_buffer.commit'));
+    await emit({ type: 'input_audio_buffer.committed', item_id: 'trailing' });
+    await emit({ ...final, item_id: 'trailing', transcript: 'The trailing final utterance.' });
+    await page.getByText('The trailing final utterance.', { exact: true }).waitFor();
+    await page.getByText('Microphone: disconnected', { exact: true }).waitFor();
+    assert.equal(await page.evaluate(() => window.micStream.getAudioTracks()[0].readyState), 'ended');
+  } finally { await context.close(); }
+});
+
+test('Chrome microphone denial is visible and leaves replay enabled', async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const cdp = await context.newCDPSession(page);
+  await cdp.send('Browser.setPermission', { permission: { name: 'microphone' }, setting: 'denied', origin: base });
+  try {
+    await ready(page);
+    await page.getByRole('button', { name: 'Start microphone', exact: true }).click();
+    await page.getByText('Microphone: error', { exact: true }).waitFor();
+    assert.match(await page.locator('[role=alert]').innerText(), /permission denied/);
+    await page.locator('.demo-controls > summary').click();
+    assert.equal(await page.getByRole('button', { name: 'Start replay', exact: true }).isEnabled(), true);
+  } finally { await context.close(); }
+});
 
 test('real backend: replay, transcript, evidence, catch-up, separate acknowledgements, resolution and reset', async () => {
   const page = await browser.newPage({ viewport: { width: 1366, height: 900 } });

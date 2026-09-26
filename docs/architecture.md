@@ -1,6 +1,6 @@
 # SenseLayer foundation
 
-This repository implements the foundation and context engine for the BAINSA “I Missed That” challenge. State is local to one Node process and disappears on restart. The engine includes an optional Claude adapter; it requires no API key by default. No live STT, database, authentication, or Docker is required.
+This repository implements the foundation and context engine for the BAINSA “I Missed That” challenge. State is local to one Node process and disappears on restart. The engine includes an optional Claude adapter; it requires no API key by default. Optional [live microphone transcription](live-stt.md) uses OpenAI while replay remains key-free. No database, authentication, or Docker is required.
 
 ## Run
 

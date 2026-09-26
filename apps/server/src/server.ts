@@ -1,10 +1,11 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { ZodError } from 'zod';
+import { z, ZodError } from 'zod';
 import {
   CatchupRequestSchema, CatchupAckRequestSchema,
-  AttentionAckRequestSchema, AttentionAckParamsSchema, ResetRequestSchema,
+  AttentionAckRequestSchema, AttentionAckParamsSchema, ResetRequestSchema, LiveTranscriptSchema,
 } from '@senselayer/shared';
 import { InMemoryStore, SemanticBatchError } from './state.js';
+import { createTranscriptionSession } from './transcription.js';
 
 async function readBody(request: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
@@ -18,7 +19,7 @@ function send(response: ServerResponse, status: number, body: unknown) {
   response.end(JSON.stringify(body));
 }
 
-export function createApp(store = new InMemoryStore()) {
+export function createApp(store = new InMemoryStore(), connectTranscription = createTranscriptionSession) {
   return createServer(async (request, response) => {
     try {
       const path = new URL(request.url ?? '/', 'http://localhost').pathname;
@@ -32,7 +33,24 @@ export function createApp(store = new InMemoryStore()) {
       }
       const body = await readBody(request);
       if (path === '/transcript') {
-        send(response, 200, await store.submit(body));
+        if (typeof body === 'object' && body !== null && 'source' in body) {
+          const event = LiveTranscriptSchema.parse(body);
+          send(response, 200, await store.ingestFinalized([{
+            ...event, timestamp: event.receivedAt, speaker: 'Microphone',
+          }]));
+        } else {
+          send(response, 200, await store.submit(body));
+        }
+      } else if (path === '/transcription/session') {
+        const { sdp } = z.object({ sdp: z.string().startsWith('v=0').max(65536) }).strict().parse(body);
+        response.setHeader('Cache-Control', 'no-store');
+        try {
+          send(response, 200, { sdp: await connectTranscription(sdp) });
+        } catch (error) {
+          // Never return provider response bodies or credentials.
+          send(response, 503, { error: error instanceof Error && error.message.startsWith('Live transcription requires')
+            ? error.message : 'OpenAI transcription connection failed. Check backend credentials, network and model access. Replay is still available.' });
+        }
       } else if (path === '/catchup') {
         CatchupRequestSchema.parse(body);
         send(response, 200, store.catchup());

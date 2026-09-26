@@ -1,0 +1,9 @@
+{
+  "batches": [
+    { "events": [{ "speaker": "Conversation", "text": "What should we get for dinner, Chinese or burritos?" }] },
+    { "events": [{ "speaker": "Conversation", "text": "I think Chinese could be good." }] },
+    { "events": [{ "speaker": "Conversation", "text": "Actually, let's go with burritos." }] },
+    { "events": [{ "speaker": "Conversation", "text": "I thought Emilio was going to pick them up." }] },
+    { "events": [{ "speaker": "Conversation", "text": "Emilio, can you go pick them up?" }] }
+  ]
+}
