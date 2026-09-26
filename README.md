@@ -56,6 +56,10 @@ Application code owns IDs, timestamps, source validation, lifecycle, state chang
 
 Speech recognition is a separate integration and currently uses OpenAI WebRTC. Changing `CONTEXT_PROVIDER` changes interpretation, not the speech-recognition service. Both microphone and replay converge at the finalized `TranscriptEvent` boundary.
 
+Optional local speaker identification uses a Python SpeechBrain sidecar and enrolled voice profiles. It is off by default. Setup, reuse of the team's Windows environment, and enrollment commands are in [the speaker setup guide](tools/speaker-recognition/README.md). Enable `SENSELAYER_SPEAKER_ID_ENABLED=1` only after preparing the interpreter, model and profiles. Open the app on localhost and select the same physical microphone in Chrome and Python. Remote/mobile capture continues without local speaker names.
+
+Names are assigned from observations covering the original audio interval, not the voice heard when a delayed transcript arrives. Brief, mixed, insufficiently covered or failed recognition stays `Unknown`; the first version favors longer single-speaker turns. The microphone button controls both capture paths. This is experimental enrolled-speaker identification, not full diarization; live accuracy still needs validation on the demo hardware.
+
 See [architecture and HTTP contracts](docs/architecture.md) and [OpenAI adapter notes](docs/openai-context.md).
 
 ## Verification
@@ -78,4 +82,4 @@ See the [130-second demo and fallback](docs/demo.md).
 
 TypeScript, React/Vite, Node, Zod and one in-memory session. No new state framework, database or message broker. Restarting clears the session, and multiple browser windows share it.
 
-Live speaker identity is not inferred. English is the rehearsed demo language; the direct-address grammar is conservative and primarily English. Model interpretation and speech recognition can be wrong. Haptics, wearables, environmental sound and parallel conversation reconstruction are future work.
+Live speaker labels remain neutral unless optional local identification is configured and has matching evidence. English is the rehearsed demo language; the direct-address grammar is conservative and primarily English. Model interpretation and speech recognition can be wrong. Haptics, wearables, environmental sound and parallel conversation reconstruction are future work.

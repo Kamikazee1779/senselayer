@@ -27,6 +27,18 @@ Only `conversation.item.input_audio_transcription.completed` events become trans
 
 The existing `/transcript` route validates this shape and maps `receivedAt` to the legacy `timestamp` plus the neutral `Microphone` label. Live metadata remains on the resulting `TranscriptEvent`. Both inputs converge at `InMemoryStore.ingestFinalized`; semantic processing, vocative detection, acknowledgements and catch-up remain provider-independent. The HTTP path returns after acceptance; queued interpretation is observed through `/session`. Existing replay requests and fixtures retain their shape. HTTP accepts finalized text without waiting for semantic analysis. Interpretation failures are reported separately through `/session` and do not stop live capture. A failed text submission or speech connection still stops capture visibly; no automatic resubmission can silently duplicate speech. Use the analysis retry control to retry retained text without re-ingesting it.
 
+## Optional local speaker identity
+
+See [speaker setup](../tools/speaker-recognition/README.md). When the server enables the feature, the SDP response also includes `speakerIdentity: true`; this alone does not start Python. A localhost browser requests `POST /speaker/capture` with `{action:"start",sessionId,deviceLabel}`, then sends a heartbeat every second. Stop, failure and page exit request capture stop; a five-second lease also stops capture if the browser disappears. Reset clears transient observations while enrolled profiles remain on disk. No process is spawned by a default server or by a remote/mobile browser.
+
+For this mode only, finalized words include optional `audio: {sessionId,startMs,endMs}`. The browser records the full audio chunk at commit time, binds it to the provider's committed item ID and preserves it through out-of-order completions. These are local wall-clock estimates of chunk boundaries, not provider word timestamps or sample-exact synchronization. They include silence; RMS only determines when to commit. `receivedAt` remains the text delivery time.
+
+Python listens independently to the configured local microphone. Both the browser device label and Python's selected name must contain `SENSELAYER_SPEAKER_DEVICE_NAME`; otherwise identity is unavailable. This check does not distinguish two identical-model microphones. Verify the actual device and concurrent access on the demo machine.
+
+The server retains up to 60 seconds of timestamped observations. At least two distinct, agreeing inference windows must be fully within the audio interval, overlap without gaps and cover at least 80% of it. Any overlapping conflicting or rejected observation vetoes the name. With default three-second windows and a 1.5-second hop, turns shorter than 4.5 seconds cannot receive a name; even longer turns can remain unknown because of window alignment, silence or startup. Recognition never delays transcript ingestion while waiting for more evidence. Names are not revised after ingestion.
+
+An explicit microphone stop preserves existing evidence for trailing finalized text. Crashes, lost heartbeats and reset invalidate recognition state. Missing Python/model/profiles, device mismatch and ambiguous evidence do not stop STT or semantic analysis. Mixed speech may still resemble a known speaker; this prototype cannot guarantee detection of overlap and needs real conversational validation.
+
 ## Checks
 
 ```powershell

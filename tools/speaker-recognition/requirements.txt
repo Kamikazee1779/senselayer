@@ -1,0 +1,9 @@
+# Capture requirements-lock.txt from the working Windows benchmark environment.
+# Install with that lock for the demo; these are direct dependencies, not tested pins.
+torch
+torchaudio
+speechbrain
+sounddevice
+soundfile
+numpy
+scipy

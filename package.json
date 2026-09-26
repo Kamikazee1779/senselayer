@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
     "replay": "tsx apps/server/src/replay.ts",
+    "eval:context": "tsx apps/server/src/eval-context.ts",
     "build": "pnpm --filter @senselayer/web build"
   },
   "devDependencies": {

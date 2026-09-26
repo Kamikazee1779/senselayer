@@ -33,8 +33,8 @@ const screenshot = (page, name) => page.screenshot({ path: fileURLToPath(new URL
 const snapshot = (session, changes = []) => ({ id: 'snapshot', created_at: stamp, acknowledged_at: null, from_time: null, from_seq: 0, upper_bound: session.change_seq,
   state: structuredClone(session.state), processing: structuredClone(session.processing), changes });
 
-async function mockMicrophone(page) {
-  await page.route('**/api/transcription/session', route => route.fulfill({ json: { sdp: 'v=0\r\nmock-answer' } }));
+async function mockMicrophone(page, speakerIdentity = false) {
+  await page.route('**/api/transcription/session', route => route.fulfill({ json: { sdp: 'v=0\r\nmock-answer', ...(speakerIdentity ? { speakerIdentity } : {}) } }));
   await page.addInitScript(() => {
     const realGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
     navigator.mediaDevices.getUserMedia = async constraints => {
@@ -56,6 +56,54 @@ async function mockMicrophone(page) {
     };
   });
 }
+
+test('optional speaker capture stops before delayed final words and carries their original audio interval', async () => {
+  const context = await browser.newContext({ permissions: ['microphone'] });
+  const page = await context.newPage();
+  const controls = [], words = [];
+  let session = initialSession();
+  await page.route('**/api/**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/api/session') return route.fulfill({ json: session });
+    if (path === '/api/speaker/capture') {
+      controls.push(route.request().postDataJSON());
+      return route.fulfill({ json: { enabled: true } });
+    }
+    if (path === '/api/transcript') {
+      const body = route.request().postDataJSON(); words.push(body);
+      const saved = { ...body, timestamp: body.receivedAt, speaker: 'Unknown' };
+      session = { ...session, revision: session.revision + 1, events: [...session.events, saved], processing: processing('ready', words.length) };
+      return route.fulfill({ json: { new_events: [saved], state: session.state, attention: [], revision: session.revision, processing: session.processing } });
+    }
+    throw new Error(`Unexpected ${path}`);
+  });
+  await mockMicrophone(page, true);
+  try {
+    await ready(page);
+    await page.getByRole('button', { name: 'Start microphone', exact: true }).click();
+    await page.getByText('Microphone on', { exact: true }).waitFor();
+    await page.evaluate(() => { window.testAudioLevel = 0.1; });
+    await page.waitForTimeout(200);
+    await page.evaluate(() => { window.testAudioLevel = 0; });
+    await page.waitForFunction(() => window.sentProviderEvents.some(event => event.type === 'input_audio_buffer.commit'));
+    const emit = data => page.evaluate(data => window.providerChannel.onmessage({ data: JSON.stringify(data) }), data);
+    await emit({ type: 'input_audio_buffer.committed', item_id: 'delayed' });
+    const stopped = page.waitForResponse(response => response.url().endsWith('/api/speaker/capture') && response.request().postDataJSON().action === 'stop');
+    await page.getByRole('button', { name: 'Stop microphone', exact: true }).click();
+    // Wait for the capture-stop request while STT is still draining the final item.
+    await stopped;
+    assert.equal(await page.evaluate(() => window.micStream.getAudioTracks()[0].readyState), 'ended');
+    assert.equal(words.length, 0);
+    await emit({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'delayed', transcript: 'These words were spoken earlier.' });
+    await page.getByText('Microphone off', { exact: true }).waitFor();
+    const start = controls.find(command => command.action === 'start');
+    assert.ok(start.deviceLabel);
+    assert.equal(words[0].audio.sessionId, start.sessionId);
+    assert.ok(words[0].audio.endMs > words[0].audio.startMs);
+    assert.ok(words[0].audio.endMs < Date.parse(words[0].receivedAt));
+    assert.ok(controls.some(command => command.action === 'stop' && command.sessionId === start.sessionId));
+  } finally { await context.close(); }
+});
 
 test('live final words continue during the modal and stopping saves the trailing utterance', async () => {
   const context = await browser.newContext({ permissions: ['microphone'] });
