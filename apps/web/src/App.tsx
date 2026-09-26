@@ -33,6 +33,7 @@ export function App() {
   const microphone = useRef<LiveMicrophone | null>(null);
   const [micState, setMicState] = useState<MicrophoneState>('disconnected');
   const [micError, setMicError] = useState('');
+  const [micDevice, setMicDevice] = useState('');
   const busy = (key: string) => actions.has(key);
   const events = session?.events ?? [];
   const processing = session?.processing;
@@ -98,7 +99,7 @@ export function App() {
           setDemoPlaying(false); setError(cause instanceof Error ? cause.message : 'Demo interrupted. Start Demo to try again.');
         }
       })();
-    }, batch === 0 ? 0 : 5000);
+    }, batch === 0 ? 0 : 1000);
     return () => clearTimeout(timer);
   }, [demoPlaying, batch, connected]);
 
@@ -107,10 +108,11 @@ export function App() {
   }
   function startMicrophone() {
     setMicError(''); microphone.current?.dispose();
+    setMicDevice('');
     const live = new LiveMicrophone((status, message) => { setMicState(status); setMicError(message ?? ''); }, async event => {
       const result = await api.liveTranscript(event);
       if (microphone.current === live) applyTranscript(result);
-    });
+    }, setMicDevice);
     microphone.current = live;
     void live.start();
   }
@@ -174,15 +176,19 @@ export function App() {
     <a className="skip-link" href="#conversation">Skip to conversation</a>
     <header className="app-header">
       <span className="brand"><span aria-hidden="true">≋</span> SenseLayer</span>
-      <div className="mode-switch" aria-label="Conversation mode">
-        <button aria-pressed={mode === 'demo'} disabled={!connected || busy('session') || demoPlaying} onClick={chooseDemo} title="Start a new sample conversation">Demo</button>
+      <div hidden className="mode-switch" aria-label="Conversation mode">
+        <button hidden aria-pressed={mode === 'demo'} disabled={!connected || busy('session') || demoPlaying} onClick={chooseDemo} title="Start a new sample conversation">Demo</button>
         <button aria-pressed={mode === 'live'} disabled={!connected || busy('session')} onClick={chooseLive}>Live</button>
       </div>
       <button className="icon-button reset" aria-label="Reset session" title="Clear conversation and stop microphone" disabled={!connected || busy('session')} onClick={() => {
         void act('session', async () => { await newSession('live'); setNotice('Session reset.'); });
       }}>↻</button>
     </header>
-    <div className="session-status" role="status"><span className={`status-dot ${micState === 'listening' || demoPlaying ? 'active' : ''}`} aria-hidden="true" />{status}</div>
+    <div className="session-status" role="status">
+      <span className={`status-dot ${micState === 'listening' || demoPlaying ? 'active' : ''}`} aria-hidden="true" />
+      <span>{status}</span>
+      <span className="microphone-device" title={micDevice}>{mode === 'live' && micDevice ? `${micActive ? '' : 'Last used: '}${micDevice}` : ''}</span>
+    </div>
     <p className="processing-status" role="status">{processing?.status === 'processing' ? 'Words saved · updating summary…' : ''}</p>
     <p className="sr-only" role="status">{notice}</p>
     <NotificationDeck cards={cards} events={events} disabled={!connected || busy('notification') || busy('session')} onSeen={markSeen} onComplete={card => complete(card.id)} />
@@ -196,7 +202,7 @@ export function App() {
         const element = transcript.current!;
         follow.current = element.scrollHeight - element.scrollTop - element.clientHeight < 60; setFollowing(follow.current);
       }}>
-        {!events.length ? <div className="empty-conversation"><span className="empty-symbol" aria-hidden="true">≋</span><h1>A little less to keep up with.</h1><p>Turn on the microphone to follow your conversation.<br />Or try Demo to see it in action.</p></div>
+        {!events.length ? <div className="empty-conversation"><span className="empty-symbol" aria-hidden="true">≋</span><h1>A little less to keep up with.</h1><p>Turn on the microphone to follow your conversation.<span hidden><br />Or try Demo to see it in action.</span></p></div>
           : <ol className="utterances">{events.map(event => <li key={event.id}><div className="speaker-line"><strong>{event.speaker}</strong><time dateTime={event.timestamp}>{time(event.timestamp)}</time></div><p>{event.text}</p></li>)}</ol>}
       </div> : <div className="summary-view" tabIndex={0} role="region" aria-label="Conversation summary">
         <h1 ref={summaryHeading} tabIndex={-1}>The conversation, simply.</h1>

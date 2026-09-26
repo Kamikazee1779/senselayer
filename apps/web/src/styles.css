@@ -13,12 +13,14 @@ h1, h2, h3, p { margin: 0; }
 .brand { font-size: 19px; font-weight: 750; letter-spacing: -.7px; }
 .brand > span { color: #316b56; font-size: 28px; vertical-align: -2px; }
 .mode-switch { display: flex; padding: 4px; border: 1px solid #dce3da; border-radius: 14px; background: #edf0ea; }
+.mode-switch[hidden] { display: none; }
 .mode-switch button { min-height: 38px; min-width: 76px; padding: 6px 15px; font-size: 14px; border-radius: 10px; }
 .mode-switch [aria-pressed="true"] { color: #fff; background: #254f40; }
 .mode-switch [aria-pressed="true"]:disabled { opacity: 1; }
 .icon-button { padding: 0; min-width: 44px; font-size: 26px; line-height: 1; }
 .reset { color: #5a6e64; }
-.session-status { display: flex; align-items: center; gap: 7px; min-height: 32px; font-size: 12px; color: #53665c; flex-shrink: 0; }
+.session-status { display: grid; grid-template-columns: 7px minmax(0, 1fr); grid-template-rows: 18px 18px; align-items: center; align-content: center; column-gap: 7px; min-height: 44px; font-size: 12px; color: #53665c; flex-shrink: 0; }
+.microphone-device { grid-column: 2; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #79857e; flex-shrink: 0; }
 .status-dot.active { background: #2d7658; }
 .messages { flex-shrink: 0; max-height: 18dvh; overflow: auto; }

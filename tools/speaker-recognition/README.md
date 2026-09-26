@@ -155,6 +155,56 @@ recognition when testing the live app.
 
 ## Microphone and configuration
 
+### Test a new recording locally
+
+Record a separate test clip with the Trust microphone. Speak alone for 15 seconds;
+press Enter when prompted. This reuses the recorder but saves in a separate
+`test-ivan` folder, without changing Ivan's enrollment or any saved profile:
+
+```sh
+tools/speaker-recognition/.venv/bin/python tools/speaker-recognition/record_enrollment.py --name test-ivan --seconds 15 --device-name "Trust GXT 232 Microphone"
+tools/speaker-recognition/.venv/bin/python tools/speaker-recognition/identify_audio.py tools/speaker-recognition/enrollments/test-ivan/enroll.wav
+```
+
+Use `--overwrite` on the recording command to repeat this test. Do not rebuild
+profiles from the test clip: a fresh recording is needed to assess recognition.
+An existing local WAV can also be passed directly to `identify_audio.py`.
+
+The test uses the cached model offline, without opening a microphone or calling
+the transcription API. It reads profiles without modifying them. For each full
+3-second window (1.5-second hop), it prints the recognized name or `Unknown`,
+similarity, margin over the runner-up, and scores for every profile. Silence is
+reported separately; any incomplete tail is reported and omitted. Low similarity
+and ambiguous matches explain rejections. These are raw window matches, not the
+stricter speaker labels assigned to transcript chunks. Scores are not percentages.
+The Python environment variables in the table below also configure this script;
+as with the other standalone scripts, the repository `.env` is not auto-loaded.
+
+To save a machine-readable report in the ignored test-recording directory:
+
+```sh
+tools/speaker-recognition/.venv/bin/python tools/speaker-recognition/identify_audio.py tools/speaker-recognition/enrollments/test-ivan/enroll.wav --json > tools/speaker-recognition/enrollments/test-ivan/result.jsonl
+```
+
+### Live terminal logs
+
+While the app's microphone is on, the server terminal prints `[speaker]` entries:
+
+```text
+[speaker] Ready | microphone="Trust GXT 232 Microphone (Core Audio)"
+[speaker] Audio 3-6s -> Ivan | score=0.640 margin=0.210 | match
+[speaker] Transcript 2-4s -> Unknown | insufficient or conflicting audio windows
+```
+
+These values are illustrative. `Audio` is the recognition of an audio window;
+`Transcript` is the final attribution to the corresponding chunk of words. They
+can differ for short turns, missing coverage or conflicting voices. Window logs
+include rejection reasons. Intervals are seconds from capture-session startup,
+so delayed results refer to when the audio was captured. The logs do not save
+live audio or transcript text. Silence emits no live recognition observation.
+
+### Settings
+
 Set `SENSELAYER_SPEAKER_ID_ENABLED=1` on the Node server to opt in. Set
 `SENSELAYER_SPEAKER_PYTHON` to the absolute path of the verified environment's
 Python interpreter. `.env.example` documents the server integration. The Python
