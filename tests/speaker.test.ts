@@ -31,12 +31,13 @@ function setup(overrides: NodeJS.ProcessEnv = {}) {
   let now = 10_000;
   let spawns = 0;
   const child = new FakeChild();
+  const logs: string[] = [];
   const identity = new SpeakerIdentity({
-    env: { SENSELAYER_SPEAKER_ID_ENABLED: '1', ...overrides }, now: () => now, log: () => {},
+    env: { SENSELAYER_SPEAKER_ID_ENABLED: '1', ...overrides }, now: () => now, log: message => logs.push(message),
     spawnProcess: () => { spawns += 1; return child as unknown as ChildProcessWithoutNullStreams; },
   });
   return {
-    identity, child, setNow: (time: number) => { now = time; }, spawns: () => spawns,
+    identity, child, logs, setNow: (time: number) => { now = time; }, spawns: () => spawns,
     start: () => { identity.start(sessionId, device); child.send({ type: 'ready', deviceName: device }); },
     send: (speaker: string, startMs: number, endMs: number, extra = {}) => {
       now = endMs;
@@ -76,6 +77,9 @@ test('late transcript A retains A after B is recognized, including after microph
   assert.equal(instance.identity.identify({ sessionId, startMs: 10_000, endMs: 14_500 }), 'Ivan');
   assert.equal(instance.identity.identify({ sessionId, startMs: 16_000, endMs: 20_500 }), 'Emilio');
   assert.equal(instance.identity.identify({ sessionId: 'another-session', startMs: 10_000, endMs: 14_500 }), 'Unknown');
+  assert.ok(instance.logs.some(line => line.includes('Audio 0-3s -> Ivan | score=0.700 margin=0.300')));
+  assert.ok(instance.logs.some(line => line.includes('Audio 1.5-4.5s -> Ivan')), 'window diagnostics are not suppressed by warning throttling');
+  assert.ok(instance.logs.some(line => line.includes('Transcript 0-4.5s -> Ivan')), 'delayed attribution is distinct from the current audio match');
   instance.identity.stop(sessionId);
   assert.match(instance.child.input, /"type":"stop"/);
   instance.setNow(30_000);

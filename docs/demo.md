@@ -1,5 +1,8 @@
 # Project-meeting demo
 
+For the recorded judges' demo with the fixed Enrico → Alexandra → Emilio speaking
+order, use [the English script and presentation cues](demo-giudici.md).
+
 The demo proves one thing: a student can recover a changed plan, its explicit reason and a personal request while the conversation continues. Aim for 90–150 seconds.
 
 ## Preparation
@@ -34,7 +37,7 @@ The demo proves one thing: a student can recover a changed plan, its explicit re
 
 ## Sample conversation and offline checks
 
-Press **Demo**. One natural English conversation advances automatically, with about five seconds between turns. Four teammates rehearse their presentation, change from desktop to mobile, divide up speaking roles and ask Emilio to check login and review slides. The text contains no instruction labels such as `Question:` or `Decision:`. Its transcript input passes through the same ingestion, reducer and catch-up logic. Use a real semantic provider to interpret the full dialogue. The offline mock recognizes only a subset of its explicit wording; the separate `project-meeting.json` fixture retains the narrow grammar for deterministic engine checks.
+Press **Demo**. One natural English conversation advances automatically, with about one second between turns. Four teammates rehearse their presentation, change from desktop to mobile, divide up speaking roles and ask Emilio to check login and review slides. The text contains no instruction labels such as `Question:` or `Decision:`. Its transcript input passes through the same ingestion, reducer and catch-up logic. Use a real semantic provider to interpret the full dialogue. The offline mock recognizes only a subset of its explicit wording; the separate `project-meeting.json` fixture retains the narrow grammar for deterministic engine checks.
 
 Open and acknowledge catch-up near the start to establish a baseline, then look away while the sample continues. Opening the modal does not pause the demo. **Live** stops the demo and starts a fresh session; the microphone button begins capture.
 

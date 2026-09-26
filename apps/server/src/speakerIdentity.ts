@@ -169,9 +169,14 @@ export class SpeakerIdentity {
 
   identify(audio?: SpeakerAudioInterval): string {
     if (!this.enabled) return 'Microphone';
-    if (!audio || audio.sessionId !== this.sessionId || audio.endMs > this.now() + 1000) return UNKNOWN;
+    if (!audio || audio.sessionId !== this.sessionId || audio.endMs > this.now() + 1000) {
+      this.log('Transcript -> Unknown | missing or invalid capture interval/session', false);
+      return UNKNOWN;
+    }
     this.prune();
-    return speakerForInterval(audio, this.observations);
+    const speaker = speakerForInterval(audio, this.observations);
+    this.log(`Transcript ${(audio.startMs - this.startedAt) / 1000}-${(audio.endMs - this.startedAt) / 1000}s -> ${speaker}${speaker === UNKNOWN ? ' | insufficient or conflicting audio windows' : ''}`, false);
+    return speaker;
   }
 
   private read(capture: Capture, chunk: string): void {
@@ -203,6 +208,7 @@ export class SpeakerIdentity {
             return;
           }
           capture.ready = true;
+          this.log(`Ready | microphone=${JSON.stringify(value.deviceName)}`, false);
         } else if (value.type === 'speaker_identity' && capture.ready) {
           this.record(value);
         }
@@ -225,6 +231,9 @@ export class SpeakerIdentity {
     }
     this.observations.push(observation);
     this.prune();
+    const reason = known ? 'match' : score < this.minScore ? 'low similarity'
+      : margin < this.minMargin ? 'ambiguous match' : 'rejected by recognizer or invalid scores';
+    this.log(`Audio ${(startMs - this.startedAt) / 1000}-${(endMs - this.startedAt) / 1000}s -> ${observation.speaker} | score=${score.toFixed(3)} margin=${margin.toFixed(3)} | ${reason}`, false);
   }
 
   private prune(): void {
@@ -238,9 +247,9 @@ export class SpeakerIdentity {
     this.stop(capture.sessionId);
   }
 
-  private log(message: string): void {
-    if (!message || this.now() - this.lastLogAt < 5000) return;
-    this.lastLogAt = this.now();
+  private log(message: string, throttle = true): void {
+    if (!message || (throttle && this.now() - this.lastLogAt < 5000)) return;
+    if (throttle) this.lastLogAt = this.now();
     try { this.logger(message); } catch { /* Logging cannot make an optional subsystem fatal. */ }
   }
 }
