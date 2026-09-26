@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   ContextStateSchema, parseDeltaOps, TranscriptRequestSchema, TranscriptEventSchema,
   requestStatus,
@@ -79,8 +80,9 @@ export function applyDeltaOps(
         if (op.question_id && (!question || question.resolution)) throw new Error('Request must reference an open question');
         const kind = op.kind ?? (question ? 'question' : 'task');
         // A delayed proposal can enrich the original alert even after it was seen.
-        // Matching source IDs also handles provider paraphrases of the same request.
-        const sourceMatch = next.user_requests.find(item => item.explicit_address &&
+        // Match only provisional alerts by source: one transcript chunk can hold
+        // several distinct requests, and must not overwrite a classified task.
+        const sourceMatch = next.user_requests.find(item => item.explicit_address && item.kind === 'attention' &&
           item.event_ids.some(id => op.event_ids.includes(id)));
         const duplicate = sourceMatch ?? next.user_requests.find(item => !item.resolved_at && sameText(item));
         if (duplicate) {
@@ -112,6 +114,7 @@ export function applyDeltaOps(
 }
 
 export class InMemoryStore {
+  private readonly instanceId = randomUUID();
   private state = emptyState();
   private events: TranscriptEvent[] = [];
   private catchups = new Map<string, CatchupResponse>();
@@ -157,6 +160,7 @@ export class InMemoryStore {
 
   getSession(): SessionResponse {
     return {
+      instance_id: this.instanceId,
       state: this.getState(), events: this.getTranscript(), processing: this.getProcessing(),
       change_seq: this.changes.length, acknowledged_seq: this.watermark,
       acknowledged_at: this.acknowledgedAt, revision: this.revision,
@@ -238,6 +242,7 @@ export class InMemoryStore {
 
   private transcriptResponse(new_events: TranscriptEvent[]): TranscriptResponse {
     return {
+      instance_id: this.instanceId,
       new_events, state: this.getState(), processing: this.getProcessing(), revision: this.revision,
       attention: this.state.user_requests.filter(request => request.explicit_address &&
         request.event_ids.some(id => new_events.some(event => event.id === id))).map(request => request.id),

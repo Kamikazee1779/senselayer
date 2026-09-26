@@ -11,6 +11,8 @@ import { Summary, time } from './Summary.js';
 export function App() {
   const [session, setSession] = useState<SessionResponse | null>(null);
   const revision = useRef(-1);
+  const instance = useRef<string | null>(null);
+  const retiredInstances = useRef(new Set<string>());
   const initialized = useRef(false);
   const [connected, setConnected] = useState(false);
   const [mode, setMode] = useState<'demo' | 'live'>('live');
@@ -39,6 +41,18 @@ export function App() {
   const processing = session?.processing;
 
   function applySession(next: SessionResponse) {
+    const nextInstance = next.instance_id ?? 'legacy';
+    if (retiredInstances.current.has(nextInstance)) return;
+    if (instance.current && instance.current !== nextInstance) {
+      // A restarted backend begins again at revision zero. Old responses must
+      // not prevent recovery or merge the previous conversation into this one.
+      retiredInstances.current.add(instance.current);
+      revision.current = -1; initialized.current = false;
+      setCatchup(null); setSeen(new Set());
+      setDemoPlaying(false); demoGeneration.current++; setBatch(0);
+      setMode('live'); setNotice('The server restarted. A new conversation session is active.');
+    }
+    instance.current = nextInstance;
     if (next.revision < revision.current) return;
     revision.current = next.revision;
     if (!initialized.current) {
@@ -48,6 +62,9 @@ export function App() {
     setSession(next); setConnected(true);
   }
   function applyTranscript(result: TranscriptResponse) {
+    // Only a full session response may switch backend instances. Polling will
+    // recover any words accepted by a new backend while this request ran.
+    if ((result.instance_id ?? 'legacy') !== instance.current) return;
     if (result.revision < revision.current) return;
     revision.current = result.revision;
     setSession(previous => previous ? { ...previous, state: result.state, processing: result.processing, revision: result.revision,

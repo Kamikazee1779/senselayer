@@ -36,6 +36,21 @@
     "expected": { "openQuestions": 0, "requests": 1, "tasks": 1 }
   },
   {
+    "name": "personal-household-task",
+    "utterances": ["Emilio. Can you please load the dishwasher"],
+    "expected": { "openQuestions": 0, "requests": 1, "tasks": 1 }
+  },
+  {
+    "name": "split-direct-task",
+    "utterances": ["Emilio.", "Can you please load the dishwasher"],
+    "expected": { "openQuestions": 0, "requests": 1, "tasks": 1 }
+  },
+  {
+    "name": "name-mention-before-task-does-not-establish-recipient",
+    "utterances": ["I spoke with Emilio yesterday.", "Can you please load the dishwasher?"],
+    "expected": { "openQuestions": 1, "requests": 0, "tasks": 0 }
+  },
+  {
     "name": "accessibility-check-is-substantive",
     "utterances": ["Emilio, can you read the captions from there?"],
     "expected": { "openQuestions": 1, "requests": 1, "tasks": 0 }

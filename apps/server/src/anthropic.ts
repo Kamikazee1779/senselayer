@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { ContextInput, ContextProvider } from './provider.js';
 import { conversationPolicy } from './conversation-policy.js';
+import { continuingAddress } from './vocative.js';
 
 const responseSchema = z.object({
   stop_reason: z.literal('end_turn'),
@@ -47,12 +48,13 @@ export class AnthropicProvider implements ContextProvider {
   }
 
   async propose(input: ContextInput): Promise<unknown> {
+    const continuing_address = continuingAddress(input.transcript, input.new_events, input.user);
     const response = await this.fetcher('https://api.anthropic.com/v1/messages', {
       method: 'POST', signal: AbortSignal.timeout(15_000),
       headers: { 'content-type': 'application/json', 'x-api-key': this.apiKey, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({
         model: this.model, max_tokens: 2048, system,
-        messages: [{ role: 'user', content: JSON.stringify(input) }],
+        messages: [{ role: 'user', content: JSON.stringify({ ...input, ...(continuing_address ? { continuing_address } : {}) }) }],
       }),
     });
     if (!response.ok) throw new Error(`Claude request failed (${response.status})`);

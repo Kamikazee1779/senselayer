@@ -8,7 +8,8 @@ SenseLayer helps someone re-enter a project conversation: what changed, the stat
 Microphone / replay
     → finalized TranscriptEvent
     → accept text + detect explicit address → immediate HTTP response
-    → ordered semantic queue → ContextProvider.propose(input)
+    → ordered semantic queue
+    → ContextProvider.propose(input)
     → validate proposed DeltaOps → deterministic reducer
     → session polling → stable catch-up snapshot
 ```
@@ -25,7 +26,7 @@ interface ContextProvider {
 }
 ```
 
-`ContextInput` contains copied domain state, transcript, new events, and configured user identity. Provider output is untrusted. Every provider passes through the same domain validation and reducer.
+`ContextInput` contains copied domain state, transcript, new events and configured user identity. Provider output is untrusted. Every provider passes through the same domain validation and reducer.
 
 To add a different engine:
 
@@ -57,6 +58,12 @@ These rules protect structure, state and source references. They do not prove se
 ## Processing and session state
 
 `GET /session` provides the current semantic state, retained transcript, processing status, change and acknowledgement cursors, user name/language, and a monotonic revision. The UI uses revisions to reject older responses rather than blocking live input during user actions.
+
+Session and transcript responses also carry an `instance_id`. Revisions are
+compared within that backend instance; after a restart, a full session response
+replaces the old conversation even if its revision is lower. Delayed responses
+from retired instances cannot restore old tasks or mix transcripts. This is
+separate from reset, which retains the instance and advances its revision.
 
 Processing reports `ready`, `processing`, or `error`, along with `received_seq`, `analyzed_seq`, `analyzed_at`, and a safe error message. It is transport/session metadata, not part of the model's semantic state.
 

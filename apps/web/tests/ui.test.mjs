@@ -33,6 +33,30 @@ const screenshot = (page, name) => page.screenshot({ path: fileURLToPath(new URL
 const snapshot = (session, changes = []) => ({ id: 'snapshot', created_at: stamp, acknowledged_at: null, from_time: null, from_seq: 0, upper_bound: session.change_seq,
   state: structuredClone(session.state), processing: structuredClone(session.processing), changes });
 
+test('backend restart accepts lower revisions and displays new tasks without a page reload', async () => {
+  const page = await browser.newPage();
+  const previous = { ...initialSession(), instance_id: 'before-restart', revision: 100,
+    events: [event('old', 'An earlier conversation.')] };
+  let session = previous;
+  await page.route('**/api/session', route => route.fulfill({ json: session }));
+  try {
+    await ready(page);
+    await page.getByText('An earlier conversation.', { exact: true }).waitFor();
+    const source = { ...event('dishwasher', 'Emilio. Can you please load the dishwasher'), source: 'live', final: true, seq: 1, receivedAt: stamp };
+    session = { ...initialSession(), instance_id: 'after-restart', revision: 2, events: [source],
+      state: { ...initialSession().state, user_requests: [{ id: 'task', kind: 'task', text: 'Load the dishwasher.', event_ids: [source.id], created_at: stamp, acknowledged_at: null }] } };
+    await page.getByRole('button', { name: 'Completed', exact: true }).waitFor();
+    assert.equal(await page.getByText('An earlier conversation.', { exact: true }).count(), 0);
+    assert.match(await page.locator('.notification-text').innerText(), /dishwasher/);
+    // An old server response arriving late cannot bring the old session back.
+    session = previous;
+    await page.waitForResponse(response => response.url().endsWith('/api/session'));
+    await page.getByRole('button', { name: 'Summary', exact: true }).click();
+    assert.match(await page.getByRole('region', { name: 'Conversation summary' }).innerText(), /dishwasher/);
+    assert.equal(await page.getByText('An earlier conversation.', { exact: true }).count(), 0);
+  } finally { await page.close(); }
+});
+
 async function mockMicrophone(page, speakerIdentity = false) {
   await page.route('**/api/transcription/session', route => route.fulfill({ json: { sdp: 'v=0\r\nmock-answer', ...(speakerIdentity ? { speakerIdentity } : {}) } }));
   await page.addInitScript(() => {

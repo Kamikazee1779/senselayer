@@ -141,6 +141,52 @@ test('a delayed paraphrased task enriches an already seen alert without marking 
   assert.ok(completed.resolved_at);
 });
 
+test('distinct tasks and questions in one addressed chunk survive provisional alert enrichment', () => {
+  for (const questionFirst of [false, true]) {
+    const store = new InMemoryStore(now);
+    store.ingest({ events: [{ speaker: 'Sam', text: 'Emilio, can you test login and send the slides? Which room should we use?' }] }, events => {
+      const event_ids = [events[0]!.id];
+      const tasks = [
+        { op: 'add_user_request' as const, text: 'Test login.', kind: 'task' as const, event_ids },
+        { op: 'add_user_request' as const, text: 'Send the slides.', kind: 'task' as const, event_ids },
+      ];
+      const question = [
+        { op: 'open_question' as const, text: 'Which room should we use?', event_ids },
+        { op: 'add_user_request' as const, text: 'Which room should we use?', kind: 'question' as const, event_ids },
+      ];
+      return [...(questionFirst ? [...question, ...tasks] : [...tasks, ...question]), tasks[0]!];
+    });
+    const state = store.getState();
+    assert.equal(state.user_requests.length, 3, 'distinct requests survive and repeated operations are inert');
+    assert.deepEqual(state.user_requests.filter(item => item.kind === 'task').map(item => item.text), ['Test login.', 'Send the slides.']);
+    const question = state.user_requests.find(item => item.kind === 'question')!;
+    assert.equal(question.question_id, state.questions[0]!.id);
+    assert.equal(state.user_requests.filter(item => item.explicit_address).length, 1, 'the provisional alert is enriched only once');
+    assert.equal(state.user_requests.some(item => item.kind === 'attention'), false);
+  }
+});
+
+test('a new request sharing evidence with completed work does not overwrite its completion', () => {
+  const store = new InMemoryStore(now);
+  const first = store.ingest({ events: [{ speaker: 'Sam', text: 'Emilio, can you test login?' }] }, events => [
+    { op: 'add_user_request', text: 'Test login.', kind: 'task', event_ids: [events[0]!.id] },
+  ]);
+  const completed = store.completeRequest(first.state.user_requests[0]!.id)!;
+  store.ingest({ events: [{ speaker: 'Sam', text: 'Emilio, which room should we use after the login test?' }] }, events => {
+    const event_ids = [first.new_events[0]!.id, events[0]!.id];
+    return [
+      { op: 'open_question', text: 'Which room should we use?', event_ids },
+      { op: 'add_user_request', text: 'Which room should we use?', kind: 'question', event_ids },
+    ];
+  });
+  const state = store.getState();
+  assert.deepEqual(state.user_requests.find(item => item.id === completed.id), completed);
+  assert.equal(state.user_requests.length, 2);
+  assert.equal(state.user_requests[1]!.kind, 'question');
+  assert.equal(state.user_requests[1]!.question_id, state.questions[0]!.id);
+  assert.equal(state.user_requests[1]!.resolved_at, undefined);
+});
+
 test('seen questions resolve with their answer; accepting a task does not complete the task', () => {
   for (const kind of ['question', 'task'] as const) {
     const store = new InMemoryStore(now);

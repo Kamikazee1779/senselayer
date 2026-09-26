@@ -5,6 +5,10 @@ order, use [the English script and presentation cues](demo-giudici.md).
 
 The demo proves one thing: a student can recover a changed plan, its explicit reason and a personal request while the conversation continues. Aim for 90–150 seconds.
 
+The [live showcase](showcase-script-en.md) offers an alternative presentation
+scenario with Enrico, Alexandra and Emilio: recover a changed presentation order,
+its stated reason and a request to adjust the laptop brightness.
+
 ## Preparation
 
 - Start frontend/backend with the intended semantic provider. Keep credentials out of the UI and recording.
