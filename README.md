@@ -9,7 +9,7 @@ SenseLayer is a Silent Specs accessibility prototype for a Deaf or hard-of-heari
 - **What changed:** current decisions, before/after changes, and an explicitly stated reason when available.
 - **Needs you:** personal requests, with seeing a task kept separate from completing it.
 - **Still open:** relevant unanswered questions.
-- A stable recovery panel while the conversation continues, with new updates indicated separately.
+- A stable catch-up modal while the conversation continues, with new updates indicated separately.
 - Sources available on demand; an interpretation is inspectable, not guaranteed correct.
 - Readable text, keyboard access, controllable transcript scrolling and quiet visual attention.
 
@@ -35,19 +35,18 @@ corepack pnpm install
 corepack pnpm --parallel --filter @senselayer/web --filter @senselayer/server dev
 ```
 
-By default the semantic provider is deterministic (`mock`), with no key required for replay. Select **Project meeting** in Demo replay to exercise the full recovery scenario. Its narrow grammar is explicitly labelled; it is not a demonstration of free-form language understanding.
+By default the semantic provider is deterministic (`mock`), with no key required for replay. Press **Demo** for one extended sample conversation, or **Live** for microphone input. The sample is scripted; the mock engine understands a narrow grammar rather than free-form language.
 
-For real microphone and semantic interpretation, export configuration in the launching shell:
+For real microphone and semantic interpretation, create `.env` in the repository root:
 
-```sh
-export OPENAI_API_KEY='<your-key>'
-export CONTEXT_PROVIDER=openai
-export SENSELAYER_USER_NAME=Emilio
-export SENSELAYER_LANGUAGE=en
-pnpm dev
+```dotenv
+OPENAI_API_KEY=<your-key>
+CONTEXT_PROVIDER=openai
+SENSELAYER_USER_NAME=Emilio
+SENSELAYER_LANGUAGE=en
 ```
 
-No environment-file loader is installed. Never expose keys in `VITE_*`, screenshots or committed files. See [`.env.example`](.env.example) for all settings and [live transcription](docs/live-stt.md) for microphone setup.
+Start the app with the command above. The backend loads the root `.env` automatically using Node.js; existing shell variables take precedence. Restart the backend after changing `.env`. This local file is ignored by Git. Never expose keys in `VITE_*`, screenshots or committed files. See [`.env.example`](.env.example) for all settings and [live transcription](docs/live-stt.md) for microphone setup.
 
 ## Interchangeable semantic engine
 
@@ -67,7 +66,7 @@ pnpm test
 pnpm build
 pnpm replay
 pnpm replay fixtures/project-meeting.json
-# With the mock development server running:
+# With the frontend running; browser tests use an isolated mock backend:
 pnpm --filter @senselayer/web test:ui
 ```
 

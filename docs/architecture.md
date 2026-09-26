@@ -70,7 +70,7 @@ Catch-up captures an immutable semantic snapshot and upper change bound. Opening
 
 The baseline is the last acknowledged catch-up, not inferred gaze or attention. `from_time` and the captured processing status make this explicit. The first catch-up covers the session so far.
 
-The presentation combines current decisions, before/after context and rationale, relevant pending requests, and unresolved questions. It collapses redundant outcomes and offers exact sources on demand. The conversation and replay continue while the user reads a stable panel. New changes are indicated without rewriting the panel.
+The presentation combines current decisions, before/after context and rationale, relevant pending requests, and unresolved questions. It collapses redundant outcomes and offers exact sources on demand. The conversation and replay continue while the user reads a stable modal. New changes are indicated without rewriting the snapshot.
 
 ## HTTP routes
 
@@ -95,4 +95,4 @@ Invalid input returns 400; unknown resources return 404. Completing a question o
 
 See `.env.example`. `CONTEXT_PROVIDER` selects the semantic adapter. `SENSELAYER_USER_NAME`, `SENSELAYER_USER_ALIASES`, and `SENSELAYER_LANGUAGE` configure the user and speech guidance consistently. English is the rehearsed demo language; the conservative direct-address grammar is not a general multilingual classifier.
 
-Run `pnpm typecheck`, `pnpm test`, `pnpm build`, and `pnpm replay`. With the mock development server running, run `pnpm --filter @senselayer/web test:ui`. Real microphone/model acceptance is separate from mocked tests, and usability with Deaf/HoH participants is a separate evaluation again.
+Run `pnpm typecheck`, `pnpm test`, `pnpm build`, and `pnpm replay`. With the frontend running, run `pnpm --filter @senselayer/web test:ui`. Browser tests use an isolated mock backend. Real microphone/model acceptance is separate from mocked tests, and usability with Deaf/HoH participants is a separate evaluation again.

@@ -1,56 +1,49 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { type CatchupResponse, type SessionResponse, type TranscriptEvent, type TranscriptResponse } from '@senselayer/shared';
+import { useEffect, useRef, useState } from 'react';
+import type { CatchupResponse, SessionResponse, TranscriptResponse } from '@senselayer/shared';
 import { api } from './api.js';
-import { replays } from './fixtures.js';
-import { catchupItems, outstandingRequests, semanticItems } from './semantic.js';
+import { demoBatches } from './fixtures.js';
+import { catchupItems, semanticItems } from './semantic.js';
 import { LiveMicrophone, type MicrophoneState } from './live.js';
-
-const time = (value: string) => new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-
-function Evidence({ ids, events }: { ids: string[]; events: TranscriptEvent[] }) {
-  return <details className="evidence"><summary>View source</summary>
-    <div className="source-content">{ids.map(id => {
-      const event = events.find(item => item.id === id);
-      return event ? <blockquote key={id}><p>{event.text}</p><footer>{event.speaker} · {time(event.timestamp)}</footer></blockquote>
-        : <p key={id}>This source is unavailable. The interpretation cannot be checked here.</p>;
-    })}</div>
-  </details>;
-}
+import { notifications, type Notification } from './notifications.js';
+import { NotificationDeck } from './NotificationDeck.js';
+import { Summary, time } from './Summary.js';
 
 export function App() {
   const [session, setSession] = useState<SessionResponse | null>(null);
   const revision = useRef(-1);
+  const initialized = useRef(false);
   const [connected, setConnected] = useState(false);
+  const [mode, setMode] = useState<'demo' | 'live'>('live');
+  const [view, setView] = useState<'transcript' | 'summary'>('transcript');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [actions, setActions] = useState<Set<string>>(new Set());
   const locks = useRef(new Set<string>());
+  const [seen, setSeen] = useState<Set<string>>(new Set());
   const [catchup, setCatchup] = useState<CatchupResponse | null>(null);
-  const [selected, setSelected] = useState(0);
-  const [activeReplay, setActiveReplay] = useState<number | null>(null);
-  const [batch, setBatch] = useState(0);
-  const [playing, setPlaying] = useState(false);
-  const [textSize, setTextSize] = useState('1');
-  const [highlightAttention, setHighlightAttention] = useState(true);
-  const panelHeading = useRef<HTMLHeadingElement>(null);
-  const catchupFocus = useRef(false);
-  const restoreFocus = useRef(false);
-  const requestsHeading = useRef<HTMLHeadingElement>(null);
   const missedButton = useRef<HTMLButtonElement>(null);
+  const summaryHeading = useRef<HTMLHeadingElement>(null);
+  const [demoPlaying, setDemoPlaying] = useState(false);
+  const [batch, setBatch] = useState(0);
+  const demoGeneration = useRef(0);
+  const demoPending = useRef<Promise<void>>(Promise.resolve());
   const transcript = useRef<HTMLDivElement>(null);
   const follow = useRef(true);
   const [following, setFollowing] = useState(true);
   const microphone = useRef<LiveMicrophone | null>(null);
   const [micState, setMicState] = useState<MicrophoneState>('disconnected');
   const [micError, setMicError] = useState('');
-  const [micStopping, setMicStopping] = useState(false);
   const busy = (key: string) => actions.has(key);
-  const state = session?.state;
   const events = session?.events ?? [];
+  const processing = session?.processing;
 
   function applySession(next: SessionResponse) {
     if (next.revision < revision.current) return;
     revision.current = next.revision;
+    if (!initialized.current) {
+      initialized.current = true;
+      if (next.events.length && next.events.every(event => event.source !== 'live')) setMode('demo');
+    }
     setSession(next); setConnected(true);
   }
   function applyTranscript(result: TranscriptResponse) {
@@ -80,179 +73,190 @@ export function App() {
     void poll();
     return () => { disposed = true; clearTimeout(timer); };
   }, []);
-  useEffect(() => () => { microphone.current?.dispose(); microphone.current = null; }, []);
-  useEffect(() => {
-    if (catchup && catchupFocus.current) { panelHeading.current?.focus(); catchupFocus.current = false; }
-    if (!catchup && restoreFocus.current && !actions.has('catchup') && !actions.has('catchup-ack')) {
-      missedButton.current?.focus(); restoreFocus.current = false;
-    }
-  }, [catchup, actions]);
+  useEffect(() => () => { microphone.current?.dispose(); demoGeneration.current++; }, []);
   useEffect(() => {
     if (follow.current && transcript.current) transcript.current.scrollTop = transcript.current.scrollHeight;
-  }, [events.length]);
+  }, [events.length, view]);
+  useEffect(() => {
+    if (!demoPlaying || !connected) return;
+    const generation = demoGeneration.current;
+    const timer = setTimeout(() => {
+      const input = demoBatches[batch];
+      if (!input) { setDemoPlaying(false); return; }
+      demoPending.current = (async () => {
+        try {
+          // Match demo requests to the configured participant, not a hardcoded name.
+          const result = await api.transcript({ events: input.events.map(event => ({
+            ...event, speaker: event.speaker === 'Emilio' ? session!.user.name : event.speaker,
+            text: event.text.replace(/\bEmilio\b/g, () => session!.user.name),
+          })) });
+          if (generation !== demoGeneration.current) return;
+          applyTranscript(result); setBatch(batch + 1);
+          if (batch + 1 === demoBatches.length) setDemoPlaying(false);
+        } catch (cause) {
+          if (generation !== demoGeneration.current) return;
+          setDemoPlaying(false); setError(cause instanceof Error ? cause.message : 'Demo interrupted. Start Demo to try again.');
+        }
+      })();
+    }, batch === 0 ? 0 : 5000);
+    return () => clearTimeout(timer);
+  }, [demoPlaying, batch, connected]);
 
   async function stopMicrophone() {
-    setMicStopping(true);
-    try { await microphone.current?.stop(); microphone.current = null; }
-    finally { setMicStopping(false); }
+    await microphone.current?.stop(); microphone.current = null;
   }
   function startMicrophone() {
-    setPlaying(false); setActiveReplay(null); setMicError('');
+    setMicError(''); microphone.current?.dispose();
     const live = new LiveMicrophone((status, message) => { setMicState(status); setMicError(message ?? ''); }, async event => {
-      // Finalized text is accepted independently of UI actions and semantic work.
       const result = await api.liveTranscript(event);
       if (microphone.current === live) applyTranscript(result);
     });
     microphone.current = live;
     void live.start();
   }
-  async function nextBatch() {
-    if (activeReplay === null || locks.current.has('replay')) return;
-    const replay = replays[activeReplay]!;
-    const input = replay.batches[batch];
-    if (!input) return;
-    await act('replay', async () => {
-      try {
-        applyTranscript(await api.transcript(input)); setBatch(batch + 1);
-        if (batch + 1 === replay.batches.length) setPlaying(false);
-      } catch (cause) { setPlaying(false); throw cause; }
+  async function newSession(nextMode: 'demo' | 'live') {
+    setDemoPlaying(false); demoGeneration.current++;
+    // Drain already submitted words before reset, so an old demo cannot refill it.
+    await demoPending.current;
+    await stopMicrophone();
+    await api.reset(); await refresh();
+    setMode(nextMode); setView('transcript'); setBatch(0); setSeen(new Set());
+    setCatchup(null); setMicError(''); setMicState('disconnected'); follow.current = true; setFollowing(true);
+  }
+  function chooseDemo() {
+    void act('session', async () => { await newSession('demo'); setDemoPlaying(true); });
+  }
+  function chooseLive() {
+    if (mode === 'live') return;
+    void act('session', async () => { await newSession('live'); });
+  }
+  function toggleMicrophone() {
+    if (locks.current.has('session')) return;
+    void act('session', async () => {
+      if (micState === 'listening' || micState === 'connecting') await stopMicrophone();
+      else { if (mode === 'demo') await newSession('live'); startMicrophone(); }
     });
   }
-  useEffect(() => {
-    if (!playing || busy('replay')) return;
-    const timer = setTimeout(() => { void nextBatch(); }, 2400);
-    return () => clearTimeout(timer);
-  }, [playing, actions, batch, activeReplay]);
-
-  async function openCatchup(moveFocus: boolean) {
-    if (locks.current.has('catchup-ack')) return;
-    await act('catchup', async () => {
-      const result = await api.catchup(); catchupFocus.current = moveFocus; setCatchup(result);
+  async function openCatchup() {
+    await act('catchup', async () => { setCatchup(await api.catchup()); });
+  }
+  function closeCatchup() {
+    setCatchup(null);
+    requestAnimationFrame(() => missedButton.current?.focus());
+  }
+  function markSeen(card: Notification) {
+    void act('notification', async () => {
+      if (card.request) await api.attentionAck(card.id);
+      setSeen(previous => new Set(previous).add(card.id));
+      if (cards.length === 1) requestAnimationFrame(() => missedButton.current?.focus());
+      if (card.request) await refresh();
+      setNotice(card.request?.kind === 'task' ? 'Notification dismissed. The task is still open in Summary.' : 'Notification dismissed.');
     });
   }
-  function closeCatchup() { restoreFocus.current = true; setCatchup(null); }
-  async function resetSession() {
-    await api.reset(); await refresh(); setCatchup(null); setBatch(0);
-    follow.current = true; setFollowing(true);
+  function complete(id: string) {
+    void act('notification', async () => {
+      await api.completeRequest(id); await refresh(); setNotice('Task completed.');
+      requestAnimationFrame(() => {
+        if (view === 'summary') summaryHeading.current?.focus();
+        else if (cards.length === 1) missedButton.current?.focus();
+      });
+    });
   }
-  const requests = state ? outstandingRequests(state) : [];
-  const caughtItems = catchup ? catchupItems(catchup) : [];
-  const allOpen = catchup ? semanticItems(catchup.state).filter(item => item.group === 'STILL OPEN') : [];
-  const olderOpen = allOpen.filter(item => !caughtItems.some(current => current.key === item.key));
-  const sourceEvents = [...new Map([...events, ...(catchup?.changes.flatMap(change => change.evidence) ?? [])].map(event => [event.id, event])).values()];
-  const total = activeReplay === null ? 0 : replays[activeReplay]!.batches.length;
-  const replayState = activeReplay === null ? 'Ready' : playing ? 'Replay playing' : batch === total ? 'Replay complete' : 'Replay paused';
-  const mode = micState === 'listening' ? 'Live microphone' : micState === 'connecting' ? 'Connecting microphone' : replayState;
-  const newChanges = catchup ? Math.max(0, (session?.change_seq ?? 0) - catchup.upper_bound) : 0;
-  const processing = session?.processing;
-  const unreviewed = session ? Math.max(0, session.change_seq - session.acknowledged_seq) : 0;
+  const cards = session ? notifications(session.state, events, seen) : [];
+  const changes = session ? Math.max(0, session.change_seq - session.acknowledged_seq) : 0;
+  const micActive = micState === 'listening' || micState === 'connecting';
+  const status = !connected ? session ? 'Connection interrupted · reconnecting' : 'Connecting…'
+    : busy('session') ? 'Preparing session…'
+    : mode === 'demo' ? demoPlaying ? 'Demo playing · sample conversation' : 'Demo · sample conversation'
+    : micState === 'listening' ? 'Microphone on' : micState === 'connecting' ? 'Connecting microphone…' : micState === 'error' ? 'Microphone unavailable' : 'Microphone off';
 
-  return <div className="app" style={{ '--reader-scale': textSize } as React.CSSProperties}>
+  return <div className="app">
     <a className="skip-link" href="#conversation">Skip to conversation</a>
-    <div className="shell">
-      <header className="app-header">
-        <a className="brand" href="#conversation" aria-label="SenseLayer conversation"><span className="brand-mark" aria-hidden="true">≋</span>SenseLayer</a>
-        <div className="connection"><span className={`status-dot ${connected ? 'connected' : ''}`} aria-hidden="true" />
-          <span>{connected ? mode : session ? 'Connection interrupted' : 'Connecting to server…'}</span>
-          <span className="mic-note" role="status">Microphone: {micState}</span>
-        </div>
-      </header>
-      <main>
-        <section className="intro" aria-labelledby="page-title">
-          <div><p className="eyebrow">For a student project meeting</p><h1 id="page-title">Pick up what changed.</h1><p className="intro-copy">Recover the decision, its reason, and your next step.</p></div>
-          <div className="catchup-action"><button className="primary missed" ref={missedButton} disabled={busy('catchup') || busy('catchup-ack') || !connected} onClick={() => { void openCatchup(true); }}><span aria-hidden="true">↶</span> {busy('catchup') ? 'Opening catch-up…' : 'I MISSED THAT'}</button>
-            <p className="change-hint">{unreviewed ? `${unreviewed} ${unreviewed === 1 ? 'change' : 'changes'} since your last review` : 'Catch up when you choose.'}</p>
-          </div>
-        </section>
-        <details className="preferences-disclosure"><summary>Reading and attention settings</summary><div className="preferences">
-          <label>Text size<select aria-label="Text size" value={textSize} onChange={event => setTextSize(event.target.value)}><option value="1">Standard</option><option value="1.15">Larger</option><option value="1.3">Largest</option></select></label>
-          <label className="checkbox-label"><input type="checkbox" checked={highlightAttention} onChange={event => setHighlightAttention(event.target.checked)} />Highlight direct attention</label>
-          {session && <p className="session-identity">For {session.user.name} · Speech language: {session.user.language}</p>}
-        </div></details>
-        {error && <div className="message error" role="alert">{error}</div>}
-        {!connected && <p className="message">{session ? 'Showing the last received information. Reconnecting automatically.' : 'Waiting for the server.'}</p>}
-        <p className="sr-only" role="status">{notice}</p>
-        <div className="control-row" aria-label="Microphone controls">
-          <button className="secondary" disabled={!connected || micStopping || micState === 'connecting' || micState === 'listening' || busy('reset')} onClick={startMicrophone}>Start microphone</button>
-          <button className="secondary" disabled={micStopping || (micState !== 'connecting' && micState !== 'listening')} onClick={() => { void stopMicrophone(); }}>Stop microphone</button>
-          {micStopping && <span role="status">Finishing transcription…</span>}
-        </div>
-        {micError && <p className="message error" role="alert">{micError}</p>}
-        {processing && <div className={`processing-status ${processing.status === 'error' ? 'message error' : ''}`}>
-          <p role="status">{processing.status === 'processing' ? 'Words are saved. Updating their meaning…' : processing.status === 'error' ? 'Context could not be updated. Saved words are still available below.' : processing.analyzed_at ? `Context includes words received through ${time(processing.analyzed_at)}.` : 'Waiting for the first words.'}</p>
-          {processing.status === 'error' && <button className="secondary" disabled={busy('retry') || !connected} onClick={() => { void act('retry', async () => { applySession(await api.retryAnalysis()); }); }}>Retry context</button>}
-        </div>}
-
-        {catchup && <section className="catchup-panel" aria-labelledby="catchup-title" onKeyDown={event => { if (event.key === 'Escape') closeCatchup(); }}>
-          <header className="dialog-header"><div><p className="eyebrow">Catch up at your pace</p><h2 id="catchup-title" ref={panelHeading} tabIndex={-1}>Here’s what changed.</h2></div><button className="close-button" aria-label="Close catch-up" onClick={closeCatchup}>×</button></header>
-          <div className="catchup-content">
-            <p className="muted">{catchup.from_time ? `Since the moment you last reviewed, ${time(catchup.from_time)}` : 'Since this session began'} · view saved at {time(catchup.created_at)}. The conversation continues below.</p>
-            <div className="snapshot-status" role="status">{newChanges > 0 ? `${newChanges} new ${newChanges === 1 ? 'change has' : 'changes have'} arrived. Refresh when you want to include them.` : processing?.status === 'processing' ? 'More words are being interpreted. They may not be included yet.' : 'This view stays still while you read.'}</div>
-            {catchup.processing.status !== 'ready' && <p className="message">{catchup.processing.status === 'error' ? 'Context is incomplete here. Check the saved words or retry context.' : 'Some words were still being interpreted when you opened this view. Refresh for later results.'}</p>}
-            <button className="text-button refresh-catchup" disabled={busy('catchup') || busy('catchup-ack') || !connected} onClick={() => { void openCatchup(false); }}>Refresh catch-up</button>
-            {!caughtItems.length && <div className="nothing-new"><h3>{catchup.processing.status === 'ready' ? 'No new decisions or requests in this catch-up.' : 'No interpreted changes available yet.'}</h3><p>{catchup.processing.status === 'ready' ? 'You can check the saved words below.' : 'This does not mean nothing happened. The saved words remain available.'}</p></div>}
-            {(['WHAT CHANGED', 'NEEDS YOU', 'STILL OPEN'] as const).map(group => {
-              const items = caughtItems.filter(item => item.group === group);
-              return items.length > 0 && <section className="catchup-group" key={group}><h3>{group === 'STILL OPEN' ? 'STILL OPEN · NEW IN THIS INTERVAL' : group}</h3><ul>{items.map(item => <li key={item.key}>
-                {item.previous && <p className="previous">Before: {item.previous}</p>}
-                <p>{item.previous ? 'Now: ' : item.resolved ? 'Answered: ' : ''}{item.text}</p>
-                {group === 'WHAT CHANGED' && !item.resolved && <p className="rationale"><strong>Why:</strong> {item.rationale?.text ?? 'No explicit reason captured.'}</p>}
-                <Evidence ids={item.event_ids} events={sourceEvents} />
-                {item.rationale && <details className="evidence rationale-source"><summary>Source for the reason</summary><EvidenceQuotes ids={item.rationale.event_ids} events={sourceEvents} /></details>}
-              </li>)}</ul></section>;
-            })}
-            {olderOpen.length > 0 && <details className="older-questions"><summary>Still open from earlier ({olderOpen.length})</summary><ul>{olderOpen.map(item => <li key={item.key}><p>{item.text}</p><Evidence ids={item.event_ids} events={sourceEvents} /></li>)}</ul></details>}
-            {catchup.changes.length > 0 && <details className="all-changes"><summary>All changes in this interval ({catchup.changes.length})</summary><p className="muted">Includes changes later replaced or answered.</p><ol>{catchup.changes.map(change => <li key={change.seq}><p>{change.text}</p><Evidence ids={change.evidence.map(event => event.id)} events={sourceEvents} /></li>)}</ol></details>}
-          </div>
-          <footer className="dialog-footer">{error && <p className="message error" role="alert">{error}</p>}<p>Mark all changes in this interval as read.<br />New updates stay available.</p><button className="primary" disabled={busy('catchup-ack') || busy('catchup') || !connected} onClick={() => { void act('catchup-ack', async () => {
-            const result = await api.catchupAck(catchup.id);
-            if (!result.acknowledged_at) throw new Error('Catch-up was not acknowledged. Please try again.');
-            await refresh(); closeCatchup(); setNotice('Catch-up marked as read.');
-          }); }}>{busy('catchup-ack') ? 'Saving…' : 'I’m caught up'}</button></footer>
-        </section>}
-
-        {requests.length > 0 && <section className="requests" aria-labelledby="requests-title"><h2 id="requests-title" ref={requestsHeading} tabIndex={-1}>Needs you</h2><p className="muted">Seen questions remain until answered. Seen tasks remain until completed.</p>
-          <ul>{requests.map(request => <li key={request.id} className={`request-row ${highlightAttention && request.explicit_address && !request.acknowledged_at ? 'priority-card' : ''}`}>
-            <div className="request-copy"><p className="request-text">{request.text}</p><p className="muted">{time(request.created_at)} · {request.kind === 'task' ? request.acknowledged_at ? 'Seen · task still outstanding' : 'Task' : request.kind === 'question' ? request.acknowledged_at ? 'Seen · awaiting an answer' : 'Question for you' : 'You were called'}</p><Evidence ids={request.event_ids} events={sourceEvents} /></div>
-            <div className="request-actions">{!request.acknowledged_at && <button className="secondary" disabled={busy(`request-${request.id}`) || !connected} onClick={() => { void act(`request-${request.id}`, async () => {
-              await api.attentionAck(request.id); await refresh(); setNotice('Request marked as seen.'); setTimeout(() => (requestsHeading.current ?? missedButton.current)?.focus(), 0);
-            }); }}>Seen</button>}{request.kind === 'task' && <button className="secondary" disabled={busy(`request-${request.id}`) || !connected} onClick={() => { void act(`request-${request.id}`, async () => {
-              await api.completeRequest(request.id); await refresh(); setNotice('Task marked as completed.'); setTimeout(() => (requestsHeading.current ?? missedButton.current)?.focus(), 0);
-            }); }}>Completed</button>}</div>
-          </li>)}</ul>
-        </section>}
-
-        <section className="conversation" id="conversation" tabIndex={-1} aria-labelledby="transcript-title">
-          <div className="section-heading"><h2 id="transcript-title">Conversation</h2><span className="quiet-label">{activeReplay !== null ? 'REPLAY TRANSCRIPT' : 'SAVED WORDS'}</span></div>
-          <div className="transcript" ref={transcript} tabIndex={0} role="region" aria-label="Conversation transcript" onScroll={() => {
-            const element = transcript.current!; follow.current = element.scrollHeight - element.scrollTop - element.clientHeight < 60; setFollowing(follow.current);
-          }}>
-            {!events.length ? <div className="empty-transcript"><h3>Room for the conversation.</h3><p>Start the microphone or a demo replay below.</p></div>
-              : <ol className="utterances">{events.map(event => <li key={event.id} id={`event-${event.id}`}><div className="speaker-line"><strong>{event.speaker}</strong><time dateTime={event.timestamp}>{time(event.timestamp)}</time></div><p>{event.text}</p></li>)}</ol>}
-          </div>
-          <div className="transcript-footer"><span>Saved words · final transcription</span>{!following && <button className="text-button" onClick={() => {
-            follow.current = true; setFollowing(true); transcript.current?.scrollTo({ top: transcript.current.scrollHeight });
-          }}>Jump to latest ↓</button>}</div>
-        </section>
-        <details className="demo-controls"><summary>Demo replay <span className="summary-note">No microphone required</span></summary>
-          <div className="controls-body"><p>Starting a replay resets this shared demo session. Replay continues while catch-up is open.</p>
-            <div className="control-row"><label>Conversation<select value={selected} disabled={busy('replay') || playing} onChange={event => setSelected(Number(event.target.value))}>{replays.map((replay, index) => <option key={replay.name} value={index}>{replay.name}</option>)}</select></label>
-              <button className="secondary" disabled={busy('reset') || busy('replay') || !connected || micStopping} onClick={() => { setPlaying(false); void act('reset', async () => { await stopMicrophone(); await resetSession(); setActiveReplay(selected); setPlaying(true); }); }}>Start replay</button>
-              {activeReplay !== null && <><button className="secondary" disabled={batch >= total || !connected} onClick={() => setPlaying(!playing)}>{playing ? 'Pause' : 'Resume'}</button><button className="text-button" disabled={busy('replay') || playing || batch >= total || !connected} onClick={() => { void nextBatch(); }}>Next batch</button></>}
-              <button className="text-button reset" disabled={busy('reset') || busy('replay') || !connected || micStopping} onClick={() => { setPlaying(false); void act('reset', async () => { await stopMicrophone(); await resetSession(); setActiveReplay(null); setNotice('Session reset.'); }); }}>Reset session</button>
-            </div>
-            {activeReplay !== null && <p role="status">{replays[activeReplay]!.name} · {replayState} · {batch} of {total} batches</p>}
-          </div>
-        </details>
-      </main>
-      <footer className="app-footer"><span>Quiet by default. Relevant when needed.</span><details className="debug"><summary>Developer / debug</summary><div className="debug-body"><h2>Session state</h2><pre>{JSON.stringify(session, null, 2)}</pre><h3>Current catch-up snapshot</h3><pre>{JSON.stringify(catchup, null, 2)}</pre></div></details></footer>
+    <header className="app-header">
+      <span className="brand"><span aria-hidden="true">≋</span> SenseLayer</span>
+      <div className="mode-switch" aria-label="Conversation mode">
+        <button aria-pressed={mode === 'demo'} disabled={!connected || busy('session') || demoPlaying} onClick={chooseDemo} title="Start a new sample conversation">Demo</button>
+        <button aria-pressed={mode === 'live'} disabled={!connected || busy('session')} onClick={chooseLive}>Live</button>
+      </div>
+      <button className="icon-button reset" aria-label="Reset session" title="Clear conversation and stop microphone" disabled={!connected || busy('session')} onClick={() => {
+        void act('session', async () => { await newSession('live'); setNotice('Session reset.'); });
+      }}>↻</button>
+    </header>
+    <div className="session-status" role="status"><span className={`status-dot ${micState === 'listening' || demoPlaying ? 'active' : ''}`} aria-hidden="true" />{status}</div>
+    <p className="processing-status" role="status">{processing?.status === 'processing' ? 'Words saved · updating summary…' : ''}</p>
+    <p className="sr-only" role="status">{notice}</p>
+    <NotificationDeck cards={cards} events={events} disabled={!connected || busy('notification') || busy('session')} onSeen={markSeen} onComplete={card => complete(card.id)} />
+    <div className="messages">
+      {error && !catchup && <p className="message error" role="alert">{error}</p>}
+      {micError && <p className="message error" role="alert">{micError}</p>}
+      {processing?.status === 'error' && <div className="message error"><p role="status">Summary unavailable. Your words are saved.</p><button className="text-button" disabled={!connected || busy('retry')} onClick={() => { void act('retry', async () => { applySession(await api.retryAnalysis()); }); }}>Retry context</button></div>}
     </div>
+    <main className="conversation" id="conversation" tabIndex={-1} aria-label="Conversation">
+      {view === 'transcript' ? <div className="transcript" ref={transcript} tabIndex={0} role="region" aria-label="Conversation transcript" onScroll={() => {
+        const element = transcript.current!;
+        follow.current = element.scrollHeight - element.scrollTop - element.clientHeight < 60; setFollowing(follow.current);
+      }}>
+        {!events.length ? <div className="empty-conversation"><span className="empty-symbol" aria-hidden="true">≋</span><h1>A little less to keep up with.</h1><p>Turn on the microphone to follow your conversation.<br />Or try Demo to see it in action.</p></div>
+          : <ol className="utterances">{events.map(event => <li key={event.id}><div className="speaker-line"><strong>{event.speaker}</strong><time dateTime={event.timestamp}>{time(event.timestamp)}</time></div><p>{event.text}</p></li>)}</ol>}
+      </div> : <div className="summary-view" tabIndex={0} role="region" aria-label="Conversation summary">
+        <h1 ref={summaryHeading} tabIndex={-1}>The conversation, simply.</h1>
+        {session && <Summary state={session.state} events={events} onComplete={complete} completing={!connected || busy('notification') || busy('session')} />}
+      </div>}
+      {!following && view === 'transcript' && <button className="jump-latest" onClick={() => {
+        follow.current = true; setFollowing(true); transcript.current?.scrollTo({ top: transcript.current.scrollHeight });
+      }}>Latest words ↓</button>}
+    </main>
+    <footer className="bottom-bar">
+      <div className="main-actions">
+        <button className={`microphone-button ${micActive ? 'listening' : ''}`} aria-label={micActive ? 'Stop microphone' : 'Start microphone'} aria-pressed={micActive}
+          disabled={busy('session') || (!connected && !micActive)} onClick={toggleMicrophone}>
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8" />{!micActive && <path d="m3 3 18 18" />}</svg>
+          <span>{micActive ? 'On' : 'Off'}</span>
+        </button>
+        <button className="missed" ref={missedButton} disabled={!connected || busy('catchup') || busy('session')} onClick={() => { void openCatchup(); }}>
+          <span aria-hidden="true">↶</span> {busy('catchup') ? 'Opening…' : 'I missed that'}{changes > 0 && <span className="change-count" aria-label={`${changes} changes since your last review`}>{changes}</span>}
+        </button>
+      </div>
+      <div className="view-switch" aria-label="Conversation view">
+        <button aria-pressed={view === 'transcript'} onClick={() => setView('transcript')}>Transcript</button>
+        <button aria-pressed={view === 'summary'} onClick={() => setView('summary')}>Summary</button>
+      </div>
+    </footer>
+    {catchup && <CatchupModal snapshot={catchup} session={session} error={error} refreshing={busy('catchup')} saving={busy('catchup-ack')} connected={connected}
+      onClose={closeCatchup} onRefresh={() => { void openCatchup(); }} onAcknowledge={() => { void act('catchup-ack', async () => {
+        const result = await api.catchupAck(catchup.id);
+        if (!result.acknowledged_at) throw new Error('Could not mark this summary as read. Please try again.');
+        await refresh(); closeCatchup(); setNotice('You’re caught up. Newer updates are still available.');
+      }); }} />}
   </div>;
 }
 
-function EvidenceQuotes({ ids, events }: { ids: string[]; events: TranscriptEvent[] }) {
-  return <div className="source-content">{ids.map(id => {
-    const event = events.find(item => item.id === id);
-    return event ? <blockquote key={id}><p>{event.text}</p><footer>{event.speaker} · {time(event.timestamp)}</footer></blockquote> : <p key={id}>Source unavailable.</p>;
-  })}</div>;
+function CatchupModal({ snapshot, session, error, refreshing, saving, connected, onClose, onRefresh, onAcknowledge }: {
+  snapshot: CatchupResponse; session: SessionResponse | null; error: string; refreshing: boolean; saving: boolean; connected: boolean;
+  onClose: () => void; onRefresh: () => void; onAcknowledge: () => void;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    const element = dialog.current!; element.showModal(); heading.current?.focus();
+    return () => { element.close(); };
+  }, []);
+  const newer = Math.max(0, (session?.change_seq ?? 0) - snapshot.upper_bound);
+  const current = catchupItems(snapshot);
+  // Include older outstanding work, so a seen but incomplete task is not lost.
+  const pending = semanticItems(snapshot.state).filter(item => item.group !== 'WHAT CHANGED' && !current.some(change => change.key === item.key));
+  const events = [...new Map([...(session?.events ?? []), ...snapshot.changes.flatMap(change => change.evidence)].map(event => [event.id, event])).values()];
+  return <dialog className="catchup-modal" ref={dialog} aria-labelledby="catchup-title" onCancel={event => { event.preventDefault(); onClose(); }} onClick={event => { if (event.target === event.currentTarget) onClose(); }}>
+    <div className="modal-shell">
+      <header className="modal-header"><div><p className="eyebrow">A moment to catch up</p><h2 id="catchup-title" ref={heading} tabIndex={-1}>Here’s what you missed.</h2></div><button className="icon-button" aria-label="Close catch-up" onClick={onClose}>×</button></header>
+      <div className="modal-content">
+        <p className="snapshot-note">{snapshot.from_time ? `Since your last review at ${time(snapshot.from_time)}.` : 'Since this session began.'} Saved at {time(snapshot.created_at)}.</p>
+        {snapshot.processing.status !== 'ready' && <p className="message">{snapshot.processing.status === 'error' ? 'This summary is incomplete. Your words are saved in Transcript.' : 'Some words are still being interpreted. This summary is incomplete.'}</p>}
+        <div className="snapshot-update"><p role="status">{newer > 0 ? `${newer} new ${newer === 1 ? 'update' : 'updates'} available.` : 'This summary stays still while you read.'}</p><button className="text-button" disabled={!connected || refreshing || saving} onClick={onRefresh}>{refreshing ? 'Updating…' : 'Update summary'}</button></div>
+        <Summary state={snapshot.state} events={events} items={[...current, ...pending]} />
+        {error && <p className="message error" role="alert">{error}</p>}
+      </div>
+      <footer className="modal-footer"><button className="caught-up" disabled={!connected || saving || refreshing} onClick={onAcknowledge}>{saving ? 'Saving…' : 'I’m caught up'}</button></footer>
+    </div>
+  </dialog>;
 }

@@ -1,14 +1,30 @@
-import topic from '../../../fixtures/topic-and-decision.json';
-import question from '../../../fixtures/question-resolution.json';
-import request from '../../../fixtures/user-request.json';
-import engine from '../../../fixtures/engine-replay.json';
-import project from '../../../fixtures/project-meeting.json';
-
-// Only transcript input goes to the real API. Never render fixture ops/expected state.
-export const replays = [
-  { name: 'Project meeting · scripted deterministic grammar', batches: project.batches },
-  { name: 'Group conversation · full demo', batches: engine.batches },
-  { name: 'A demo decision', batches: topic.batches.map(batch => ({ events: batch.events })) },
-  { name: 'A question answered', batches: question.batches.map(batch => ({ events: batch.events })) },
-  { name: 'A request for you', batches: request.batches.map(batch => ({ events: batch.events })) },
+// One sample conversation, written as spoken dialogue. Only transcript input
+// goes to the API; interpretation always comes from the configured engine.
+export const demoBatches = [
+  { events: [{ speaker: 'Sara', text: "Okay, we've got ten minutes. Can we run through the demo once?" }] },
+  { events: [{ speaker: 'Luca', text: "Yep. I've got the desktop version open. I'll share my screen." }] },
+  { events: [{ speaker: 'Marta', text: "Hang on, is that what it'll look like on the projector? I can barely read the captions." }] },
+  { events: [{ speaker: 'Luca', text: 'Oh. I could zoom in a bit.' }] },
+  { events: [{ speaker: 'Sara', text: 'Try the phone layout for a second.' }] },
+  { events: [{ speaker: 'Marta', text: "Yeah, that's much better. The text has room to breathe." }] },
+  { events: [{ speaker: 'Sara', text: "Let's use the mobile version, then. The bigger text is much easier to read from the back." }] },
+  { events: [{ speaker: 'Luca', text: 'Emilio, can you test the login on mobile now?' }] },
+  { events: [{ speaker: 'Emilio', text: 'Sure, give me a sec. Which account are we using?' }] },
+  { events: [{ speaker: 'Sara', text: "The demo account. I'll send you the details." }] },
+  { events: [{ speaker: 'Marta', text: "Who's explaining how it works? I thought Emilio was doing that part." }] },
+  { events: [{ speaker: 'Luca', text: "I can take it. Emilio's already got the login to check." }] },
+  { events: [{ speaker: 'Marta', text: "Thanks. I'll introduce the problem, then hand over to you." }] },
+  { events: [{ speaker: 'Sara', text: "And let's keep that bit short. People will get it faster if they can actually try it." }] },
+  { events: [{ speaker: 'Luca', text: "We agreed to leave time for questions, so I'll skip the code walkthrough." }] },
+  { events: [{ speaker: 'Marta', text: 'Do we start with the transcript, or go straight to the summary?' }] },
+  { events: [{ speaker: 'Sara', text: 'Transcript first. Then one of us changes the plan and we open the summary.' }] },
+  { events: [{ speaker: 'Luca', text: 'Right, so they can see what they missed. That makes sense.' }] },
+  { events: [{ speaker: 'Emilio', text: "I'm in. The page loads, but I still want to check the sign-out button." }] },
+  { events: [{ speaker: 'Marta', text: 'Emilio, could you review my last two slides after the meeting?' }] },
+  { events: [{ speaker: 'Emilio', text: 'Yeah, send them over.' }] },
+  { events: [{ speaker: 'Sara', text: 'How are people getting the link? Is it on the last slide?' }] },
+  { events: [{ speaker: 'Marta', text: 'Not yet. I can put a QR code there.' }] },
+  { events: [{ speaker: 'Sara', text: "Perfect. Let's add that and leave the slide up while they try it." }] },
+  { events: [{ speaker: 'Luca', text: 'Okay, shall we run it from the top?' }] },
+  { events: [{ speaker: 'Marta', text: "Yep. Give me a second to pull up the first slide." }] },
 ];

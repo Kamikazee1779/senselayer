@@ -9,9 +9,9 @@ $env:CONTEXT_PROVIDER = 'mock'
 pnpm dev
 ```
 
-Open http://127.0.0.1:5173 in Chrome. Click **Start microphone**, grant permission, speak English, and pause briefly between utterances. Chrome's selected/default microphone is used. **Stop microphone** releases capture and waits up to ten seconds for the trailing utterance to finalize. Connection and transcription failures display an error; **Demo replay** remains usable. Starting replay or resetting stops live capture before resetting the shared session.
+Open http://127.0.0.1:5173 in Chrome. Choose **Live**, press the microphone button at bottom left, grant permission, speak English, and pause briefly between utterances. Chrome's selected/default microphone is used. Pressing the same microphone button again releases capture and waits up to ten seconds for the trailing utterance to finalize. Connection and transcription failures display an error; **Demo** remains usable. Starting replay or resetting stops live capture before resetting the shared session.
 
-`OPENAI_API_KEY` is the only new required variable, and only needed for live transcription. It must be available to the backend process with access to `gpt-live-transcribe`. Never prefix it with `VITE_`. No environment-file loader is installed: export it in the shell launching `pnpm dev`. The existing optional `CONTEXT_PROVIDER`, `ANTHROPIC_API_KEY`, and `ANTHROPIC_MODEL` settings are unchanged. The commands above keep semantic reasoning deterministic; use your existing Claude configuration if desired.
+`OPENAI_API_KEY` is the only new required variable, and only needed for live transcription. It must be available to the backend process with access to `gpt-live-transcribe`. Never prefix it with `VITE_`. The backend automatically loads `.env` from the repository root; exporting variables in the launching shell also works and takes precedence. Restart after changing `.env`. The existing optional `CONTEXT_PROVIDER`, `ANTHROPIC_API_KEY`, and `ANTHROPIC_MODEL` settings are unchanged. The commands above keep semantic reasoning deterministic; set `CONTEXT_PROVIDER=openai` for OpenAI interpretation or use your existing Claude configuration if desired.
 
 ## Boundary and transport
 
@@ -40,6 +40,6 @@ pnpm --filter @senselayer/web test:ui
 
 The Chrome suite uses a synthetic microphone device and mocks the OpenAI WebRTC peer/handshake. It exercises Chrome permission grant/denial, real capture-track cleanup, final-only HTTP ingestion, live provenance and replay fallback. Unit tests mock the OpenAI HTTP call and verify model/session configuration and ordered final handling. These tests do not establish real OpenAI recognition accuracy or physical microphone operation.
 
-For a real acceptance run, configure the key, grant the physical microphone permission, say an English sentence including “Emilio”, pause, and check the conversation plus Developer / debug transcript for `source: "live"` and `final: true`. Stop and run a replay. A successful real provider run must be reported separately from the automated mocked checks.
+For a real acceptance run, configure the key, grant the physical microphone permission, say an English sentence including “Emilio”, pause, and check the conversation. For provenance, inspect `GET /session` for `source: "live"` and `final: true`. Stop and run a replay. A successful real provider run must be reported separately from the automated mocked checks.
 
 Implementation references: [Realtime transcription](https://developers.openai.com/api/docs/guides/realtime-transcription) and [WebRTC unified interface](https://developers.openai.com/api/docs/guides/realtime-webrtc).

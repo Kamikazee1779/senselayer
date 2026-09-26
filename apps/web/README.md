@@ -1,35 +1,36 @@
 # SenseLayer conversation UI
 
-The UI helps a participant recover a changed plan, an explicit reason and pending personal requests. It consumes domain contracts only; it has no dependency on a semantic provider SDK.
+A full-height conversation with two modes: **Demo** starts one extended sample, **Live** starts a fresh conversation when leaving the demo. The bottom-left microphone button toggles capture. Transcript and Summary switch the main reading view. Reset is a small header action.
 
-## Interaction
+## Components
 
-**I MISSED THAT** opens a stable, nonmodal recovery panel. The live conversation and replay continue while it is open. New semantic changes are indicated separately; refreshing is explicit. Closing does not acknowledge anything. **I’m caught up** acknowledges the captured snapshot only, leaving later changes available.
+- `App.tsx` coordinates the session, polling, demo playback, microphone and catch-up modal. It prevents an old demo request from refilling a new Live session.
+- `NotificationDeck.tsx` shows one card at a time, with a counter, previous/next buttons, keyboard arrows and horizontal swipe. A new card does not replace the selected card.
+- `notifications.ts` turns active domain state into cards. Green is context, yellow is attention, red requires a direct task with explicit immediate wording in both the request and source. This is a conservative wording rule, not a general urgency classifier.
+- `Summary.tsx` displays the plan, explicitly stated reasons, personal requests and unresolved questions. A single Source disclosure combines decision and reason evidence without duplicate quotations. `semantic.ts` selects current items and changes within a catch-up interval.
+- `live.ts` captures microphone audio, connects to speech recognition and submits only completed utterances. Live speakers remain labelled Microphone.
+- `api.ts` validates HTTP responses against shared contracts. No provider keys enter the UI.
+- `fixtures.ts` contains one natural English sample conversation, without semantic instruction labels. It sends only transcript input; semantic output comes from the configured backend engine. The offline mock recognizes a limited subset of the dialogue.
 
-Recovery groups are **What changed**, **Needs you**, and **Still open**. Decisions show before/after when available, and a reason only when explicitly extracted with sources. Exact transcript sources are progressively disclosed. Earlier open questions and the interval history remain accessible.
+**Seen** dismisses the notification and updates its counter. Seen tasks and unanswered questions remain in Summary; tasks can still be marked **Completed** there. That button appears only for tasks. Context-card read marks are local to the mounted UI; personal request acknowledgements are retained by the server.
 
-**Seen** silences an attention highlight; an unfinished task or unanswered question remains pending. **Completed** closes a task. A bare call can be dismissed, and a later call can return. Users can adjust text size and attention highlighting. Incoming content does not steal focus or force transcript scrolling if the reader has scrolled up.
+**I missed that** opens a native modal dialog, trapping keyboard focus and returning it on close. The underlying conversation continues. The snapshot stays still until **Update summary** is pressed; **I’m caught up** acknowledges only that snapshot, leaving later changes unread. Closing does not acknowledge it.
 
-Processing indicators distinguish pending analysis, failure and completed coverage. A model failure does not remove received words or stop capture; **Retry context** retries the retained transcript. Speech connection or HTTP text-submission errors remain visible.
+The analysis status has reserved space above notifications to avoid moving the card as processing starts and finishes. Errors stay visible below notifications, with retry for failed analysis. The transcript follows new words only while the reader is at its end.
 
-## Data flow
+## Data and checks
 
-The UI polls `GET /session` once per second for state, saved transcript, processing status, cursors and user identity. Monotonic revisions prevent an older response from replacing newer state. Finalized speech ingestion is independent of UI actions and does not wait for semantic interpretation.
+The UI polls `GET /session` every second. Monotonic revisions reject older responses. The shared in-memory server retains words across browser reloads; restarting the server clears them. Switching modes or resetting clears that shared session.
 
-The transcript comes from the retained server session, so reloading the page restores saved words. The session is shared and in memory; restarting the backend clears it. Name and speech language shown in the UI come from server configuration.
-
-## Development and tests
-
-Run the frontend and backend from the workspace root; open http://127.0.0.1:5173. Choose the project-meeting replay for the full recovery scenario.
+Run frontend/backend from the repository root and open http://127.0.0.1:5173.
 
 ```sh
 pnpm typecheck
 pnpm test
 pnpm build
-# With the mock development server running:
 pnpm --filter @senselayer/web test:ui
 ```
 
-Browser tests use installed Chrome in headless mode. `UI_BROWSER=msedge` selects Edge and `UI_BASE_URL` selects another frontend URL. Tests reset the local demo session. Screenshots are saved under ignored `apps/web/dist/qa`; a later build clears them.
+Browser tests use installed Chrome, mocked speech events and an isolated deterministic backend. They do not use the configured OpenAI key or reset the user's running session. `UI_BASE_URL` selects the frontend; `UI_BROWSER=msedge` selects Edge. Screenshots go into ignored `dist/qa`; build clears that folder.
 
-Automated browser tests and simulated microphone/provider events do not establish physical microphone recognition quality, model accuracy or usefulness for Deaf/HoH users. See [the demo runbook](../../docs/demo.md) for separate real-provider and usability checks.
+Physical microphone accuracy and usability with Deaf/HoH participants need separate evaluation.

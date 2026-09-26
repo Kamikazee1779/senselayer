@@ -8,7 +8,7 @@ The SDK's strict schema requires nullable optional reference fields; the adapter
 
 ## Real-provider smoke test
 
-Stop the existing `pnpm dev` process first so the restarted backend reads the environment. From the repository root in PowerShell, with the existing `OPENAI_API_KEY` already exported in this shell:
+Stop the existing `pnpm dev` process first so the restarted backend reads the environment. Set `OPENAI_API_KEY` and `CONTEXT_PROVIDER=openai` in the root `.env`, which the backend loads automatically. Alternatively, from the repository root in PowerShell, with `OPENAI_API_KEY` already exported in this shell:
 
 ```powershell
 pnpm install

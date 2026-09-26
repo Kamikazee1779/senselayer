@@ -32,11 +32,11 @@ The demo proves one thing: a student can recover a changed plan, its explicit re
 
 **120–130 seconds — outcome.** Emilio knows the current plan, the reason for the change, and what to do next. Mark the login test completed only after it has actually been done.
 
-## Deterministic fallback
+## Sample conversation and offline checks
 
-Select **Project meeting** in Demo replay. Its fixture contains only transcript input and passes through the same ingestion, reducer and catch-up logic. The mock provider uses a deliberately narrow grammar such as `Decision:`, `Correction:`, `Question:` and `Answer:`. This is a demonstration of application behavior, not free-form language understanding.
+Press **Demo**. One natural English conversation advances automatically, with about five seconds between turns. Four teammates rehearse their presentation, change from desktop to mobile, divide up speaking roles and ask Emilio to check login and review slides. The text contains no instruction labels such as `Question:` or `Decision:`. Its transcript input passes through the same ingestion, reducer and catch-up logic. Use a real semantic provider to interpret the full dialogue. The offline mock recognizes only a subset of its explicit wording; the separate `project-meeting.json` fixture retains the narrow grammar for deterministic engine checks.
 
-To establish the baseline deliberately, pause replay, advance the first batch, and acknowledge catch-up. Resume replay while looking away. Opening catch-up must not pause it; the later answer arrives while the earlier snapshot stays readable.
+Open and acknowledge catch-up near the start to establish a baseline, then look away while the sample continues. Opening the modal does not pause the demo. **Live** stops the demo and starts a fresh session; the microphone button begins capture.
 
 Command-line check:
 

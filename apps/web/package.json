@@ -2,7 +2,7 @@
   "name": "@senselayer/web",
   "private": true,
   "type": "module",
-  "scripts": { "dev": "vite --host 127.0.0.1", "build": "vite build", "test:ui": "node --test tests/ui.test.mjs" },
+  "scripts": { "dev": "vite --host 127.0.0.1", "build": "vite build", "test:ui": "node --import tsx --test tests/ui.test.mjs" },
   "dependencies": {
     "@senselayer/shared": "workspace:*",
     "react": "^19.0.0",

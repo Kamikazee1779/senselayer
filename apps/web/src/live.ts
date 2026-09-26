@@ -160,7 +160,7 @@ export class LiveMicrophone {
 
   private fail(message: string) {
     if (this.closed) return;
-    this.dispose(); this.status('error', `${message} Replay remains available.`);
+    this.dispose(); this.status('error', `${message} Demo remains available.`);
   }
 
   dispose() {
