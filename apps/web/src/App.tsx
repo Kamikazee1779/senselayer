@@ -159,6 +159,68 @@ export function App() {
     }
   }
 
+  function urlBase64ToUint8Array(base64String: string) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding)
+      .replace(/-/g, '+')
+      .replace(/_/g, '/');
+
+    const rawData = window.atob(base64);
+    return Uint8Array.from([...rawData].map(char => char.charCodeAt(0)));
+  }
+
+  async function subscribeToPush() {
+    try {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        setNotice('Push notifications are not supported here.');
+        return;
+      }
+
+      const permission = await Notification.requestPermission();
+
+      if (permission !== 'granted') {
+        setNotice(`Notification permission: ${permission}`);
+        return;
+      }
+
+      const registration = await navigator.serviceWorker.ready;
+
+      const keyResponse = await fetch('/api/push/vapid-public-key');
+      const { publicKey } = await keyResponse.json();
+
+      if (!publicKey) {
+        setNotice('Server VAPID key is missing.');
+        return;
+      }
+
+      let subscription = await registration.pushManager.getSubscription();
+
+      if (!subscription) {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicKey)
+        });
+      }
+
+      const response = await fetch('/api/push/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(subscription)
+      });
+
+      if (!response.ok) {
+        throw new Error('Subscription failed');
+      }
+
+      setNotice('Push subscription active.');
+      alert('SenseLayer push is READY');
+    } catch (error) {
+      console.error(error);
+      setNotice('Push subscription failed.');
+      alert('Push subscription failed — check console');
+    }
+  }
+
   async function sendTestNotification() {
     if (Notification.permission !== 'granted') {
       setNotice('Enable notifications first.');
@@ -248,6 +310,9 @@ return <>
           <div className="control-row">
               <button className="secondary" onClick={() => void enableNotifications()}>
                 Enable notifications
+              </button>
+              <button className="secondary" onClick={() => void subscribeToPush()}>
+                Subscribe to push
               </button>
               <button className="secondary" onClick={() => void sendTestNotification()}>
                 Send test notification

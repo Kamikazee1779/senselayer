@@ -13,3 +13,5 @@ dist/
 Thumbs.db
 .vscode/
 .idea/
+
+.push-subscription.json
