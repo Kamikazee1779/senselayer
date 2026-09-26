@@ -4,6 +4,8 @@ The existing provider interface now accepts `CONTEXT_PROVIDER=openai`. It uses t
 
 The model receives active semantic state (including seen but unfinished tasks), up to 40 older transcript events, the explicit `new_events` batch, and configured user names. Instructions distinguish commitments from preferences, explicit answers from speculation, and actionable requests from ordinary name mentions. Decision proposals may include an optional explicit rationale with its own source IDs. Request proposals distinguish conversational questions from tasks; accepting a task does not complete it. No new semantic operation type is required. Vendor-specific nullable fields are normalized inside the adapter. The common reducer validates every proposal regardless of provider.
 
+OpenAI and Claude share the conversational relevance rules in `conversation-policy.ts`. Ordinary reciprocal small talk stays in the transcript instead of becoming a persistent question or personal request. Substantive questions about assistance, accessibility or choices remain eligible. A nearby earlier name mention does not establish the recipient of a later generic question, and a question already answered within the same transcript chunk must not remain open. Provisional `kind=attention` calls still need semantic classification when they contain real work or a substantive question.
+
 The SDK's strict schema requires nullable optional reference fields; the adapter removes null references and passes proposals through the existing `parseDeltaOps`. Every citation must exist and at least one must belong to the new batch. The reducer still validates and owns all mutations, IDs, timestamps, lifecycles, supersession and watermarks. Requests have a 15-second SDK timeout and no automatic SDK retries. Existing application retry/cursor behavior is unchanged. API refusals, incomplete output, invalid JSON/schema/evidence and errors fail the batch.
 
 ## Real-provider smoke test
@@ -35,5 +37,22 @@ pnpm replay
 ```
 
 The adapter tests use the real SDK with mocked HTTP responses, checking structured format, metadata ownership, active context, evidence rules, malformed/refused/truncated output, timeout propagation, retry/cursor preservation and the dinner fixture's state transitions. All earlier tests remain in place.
+
+For semantic quality, run the optional real-provider regression cases separately:
+
+```sh
+pnpm eval:context
+# Run only the original greeting regression:
+pnpm eval:context social-reciprocity
+```
+
+This command loads the root `.env`, requires `CONTEXT_PROVIDER=openai` or `claude`,
+and makes real API requests using the configured model. Each case uses an isolated
+in-memory conversation; the running app and microphone are untouched. Cases cover
+English/Italian greetings, unsupported recipient inference, same-chunk answers,
+substantive personal/group questions, accessibility questions and task lifecycle.
+Greeting checks include historical questions/requests so a transient false alert
+cannot pass merely by resolving later. These checks measure sampled outputs, not
+a guarantee of model accuracy on all future speech.
 
 References: [Responses structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs), [GPT-5.6 Terra](https://developers.openai.com/api/docs/models/gpt-5.6-terra).

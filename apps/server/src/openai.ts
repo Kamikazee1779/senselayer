@@ -3,6 +3,7 @@ import { zodTextFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
 import { DeltaOpSchema, IdSchema, parseDeltaOps, requestStatus } from '@senselayer/shared';
 import type { ContextInput, ContextProvider } from './provider.js';
+import { conversationPolicy } from './conversation-policy.js';
 
 // Strict structured output requires every property. Nullable references exist
 // only on the provider wire; null is omitted before application validation.
@@ -24,17 +25,17 @@ older_context is earlier transcript context; new_events is the explicit batch to
 Only propose set_topic, add_decision, open_question, resolve_question, add_user_request.
 If ambiguous or nothing material changed, return {"ops":[]}.
 Explicit commitments are decisions; suggestions, possibilities and preferences are not commitments.
-Explicit unresolved questions can open questions. A preference following a question does not resolve it.
+Substantive unresolved questions can open questions. A preference following a question does not resolve it.
 Only an explicit compatible answer or commitment resolves an existing open question. When supported,
 propose both resolution and decision. Use the existing question_id; do not guess missing references.
-Direct questions or explicit task assignments to the configured user can be user requests.
+Explicitly targeted substantive questions or task assignments to the configured user can be user requests.
 Use kind=task for requests to do work, including polite questions such as "can you test login?".
 Use kind=question for requests for an answer, information or an opinion, such as "what do you think?".
 Task acceptance is not task completion. Acknowledged tasks in active_state remain incomplete;
 do not repeat them, resolve them as questions, or infer completion from acknowledgement.
 Speculation about what the user might do or reports about what someone thought they would do are not requests.
 Ordinary name mentions are not actionable. Never infer identity, emotion, sarcasm or unstated intent.
-For a new conversational question directed to the user, propose open_question and add_user_request(kind=question) with identical
+For a new substantive question directed to the user, propose open_question and add_user_request(kind=question) with identical
 text and evidence; the application links them. A matching fast-path request may already exist;
 the application enriches its kind and text using the shared source IDs. Do not otherwise repeat existing semantic items.
 Do not open a question merely because a task request uses interrogative wording.
@@ -49,7 +50,8 @@ Never generate application IDs, timestamps, lifecycle flags, alerts or UI behavi
 state or move watermarks. Existing entity IDs may only be referenced for resolution, supersession
 or linking to an existing question. Application code alone controls immediate attention.
 Return only the structured ops object. Use null for absent optional question_id, supersedes_id,
-rationale or kind; prefer an explicit question/task kind when the request is clear.`;
+rationale or kind; prefer an explicit question/task kind when the request is clear.
+${conversationPolicy}`;
 
 export class OpenAIContextProvider implements ContextProvider {
   private readonly client: OpenAI;

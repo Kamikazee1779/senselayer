@@ -1,0 +1,53 @@
+[
+  {
+    "name": "social-reciprocity",
+    "noQuestionHistory": true,
+    "utterances": [
+      "Hello, hello. Hi Emilio, hello.",
+      "Emilio, how are you? I'm doing fine. I'm working on that hackathon",
+      "Hi, yeah, I'm, I'm pretty good actually. How are you?"
+    ],
+    "expected": { "openQuestions": 0, "requests": 0, "tasks": 0 }
+  },
+  {
+    "name": "social-reciprocity-italian",
+    "noQuestionHistory": true,
+    "utterances": ["Ciao Emilio, tutto bene?", "Sì, tutto bene, grazie. Tu come stai?", "Bene, grazie!"],
+    "expected": { "openQuestions": 0, "requests": 0, "tasks": 0 }
+  },
+  {
+    "name": "answer-in-same-chunk",
+    "utterances": ["Which room are we meeting in? Room B, on the first floor."],
+    "expected": { "openQuestions": 0, "requests": 0, "tasks": 0 }
+  },
+  {
+    "name": "previous-name-does-not-establish-recipient",
+    "utterances": ["Hi Emilio, good to see you.", "Which room is the meeting in?"],
+    "expected": { "openQuestions": 1, "requests": 0, "tasks": 0 }
+  },
+  {
+    "name": "personal-substantive-question",
+    "utterances": ["Emilio, which layout do you prefer for the demo?"],
+    "expected": { "openQuestions": 1, "requests": 1, "tasks": 0 }
+  },
+  {
+    "name": "personal-task",
+    "utterances": ["Emilio, can you test the login now?"],
+    "expected": { "openQuestions": 0, "requests": 1, "tasks": 1 }
+  },
+  {
+    "name": "accessibility-check-is-substantive",
+    "utterances": ["Emilio, can you read the captions from there?"],
+    "expected": { "openQuestions": 1, "requests": 1, "tasks": 0 }
+  },
+  {
+    "name": "answer-resolves-personal-question",
+    "utterances": ["Emilio, should we use the mobile layout or the desktop layout?", "We'll use the mobile layout."],
+    "expected": { "openQuestions": 0, "requests": 0, "tasks": 0 }
+  },
+  {
+    "name": "accepting-work-does-not-complete-it",
+    "utterances": ["Emilio, can you test the login?", "Yes, I'll test the login after lunch."],
+    "expected": { "openQuestions": 0, "requests": 1, "tasks": 1 }
+  }
+]
