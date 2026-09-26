@@ -18,7 +18,7 @@ function response(text: string, status = 'completed') {
   });
 }
 const output = (ops: unknown[]) => response(JSON.stringify({ ops }));
-const decision = { op: 'add_decision', text: 'Ship Friday.', event_ids: ['new'], supersedes_id: null };
+const decision = { op: 'add_decision', text: 'Ship Friday.', event_ids: ['new'], supersedes_id: null, rationale: null };
 
 test('OpenAI is opt-in, requires a key, defaults to terra and supports a model override', async () => {
   assert.throws(() => engineConfig({ CONTEXT_PROVIDER: 'openai' }), /OPENAI_API_KEY/);
@@ -32,6 +32,13 @@ test('OpenAI is opt-in, requires a key, defaults to terra and supports a model o
       assert.equal(body.store, false);
       assert.equal(body.text.format.type, 'json_schema');
       assert.equal(body.text.format.strict, true);
+      const variants = body.text.format.schema.properties.ops.items.anyOf;
+      const decisionWire = variants.find((variant: { properties: Record<string, unknown> }) => variant.properties.rationale);
+      const requestWire = variants.find((variant: { properties: Record<string, unknown> }) => variant.properties.kind);
+      assert.deepEqual([...decisionWire.required].sort(), ['event_ids', 'op', 'rationale', 'supersedes_id', 'text']);
+      assert.deepEqual([...requestWire.required].sort(), ['event_ids', 'kind', 'op', 'question_id', 'text']);
+      assert.equal(decisionWire.additionalProperties, false);
+      assert.equal(requestWire.additionalProperties, false);
       assert.ok(init?.signal);
       assert.match(body.instructions, /suggestions, possibilities and preferences are not commitments/);
       assert.match(body.instructions, /Ordinary name mentions are not actionable/);
@@ -50,14 +57,18 @@ test('OpenAI receives active state, bounded older context and an explicit unchan
     { id: 'active', created_at: stamp, text: 'Current', event_ids: ['old-2'] },
   ];
   context.state.questions = [{ id: 'resolved', created_at: stamp, text: 'Done?', event_ids: ['old-1'], resolution: { resolved_at: stamp, text: 'Yes', event_ids: ['old-2'] } }];
-  context.state.user_requests = [{ id: 'ack', created_at: stamp, text: 'Review', event_ids: ['old-1'], acknowledged_at: stamp }];
+  context.state.user_requests = [
+    { id: 'ack', created_at: stamp, text: 'Your view?', event_ids: ['old-1'], acknowledged_at: stamp, kind: 'question' },
+    { id: 'unfinished-task', created_at: stamp, text: 'Review', event_ids: ['old-1'], acknowledged_at: stamp, kind: 'task' },
+    { id: 'done-task', created_at: stamp, text: 'Send', event_ids: ['old-1'], acknowledged_at: stamp, resolved_at: stamp, kind: 'task' },
+  ];
   const before = structuredClone(context);
   const provider = new OpenAIContextProvider('key', undefined, async (_url, init) => {
     const sent = JSON.parse(JSON.parse(String(init?.body)).input[0].content);
     assert.equal(sent.active_state.decisions.length, 1);
     assert.equal(sent.active_state.decisions[0].id, 'active');
     assert.deepEqual(sent.active_state.questions, []);
-    assert.deepEqual(sent.active_state.user_requests, []);
+    assert.deepEqual(sent.active_state.user_requests.map((item: { id: string }) => item.id), ['unfinished-task']);
     assert.equal(sent.older_context.length, 40);
     assert.equal(sent.older_context[0].id, 'old-20');
     assert.deepEqual(sent.new_events, context.new_events);
@@ -79,6 +90,10 @@ test('OpenAI rejects malformed, incomplete, refused, illegal and fabricated-evid
     () => output([{ ...decision, event_ids: [] }]),
     () => output([{ ...decision, event_ids: ['new', 'invented'] }]),
     () => output([{ ...decision, event_ids: ['old'] }]),
+    () => output([{ ...decision, rationale: { text: 'The team said so.', event_ids: ['invented'] } }]),
+    () => output([{ ...decision, rationale: { text: 'The team said so.', event_ids: [] } }]),
+    () => output([{ op: 'add_decision', text: 'Missing nullable rationale', event_ids: ['new'], supersedes_id: null }]),
+    () => output([{ op: 'add_user_request', text: 'Missing nullable kind', event_ids: ['new'], question_id: null }]),
     () => new Response('unavailable', { status: 503 }),
     () => { throw new DOMException('Timed out', 'AbortError'); },
   ];
@@ -88,6 +103,22 @@ test('OpenAI rejects malformed, incomplete, refused, illegal and fabricated-evid
     await assert.rejects(provider.propose(input));
     assert.equal(calls, 1, 'application owns retries, not SDK');
   }
+});
+
+test('OpenAI preserves separately grounded reasons and request kind while removing wire-only nulls', async () => {
+  const provider = new OpenAIContextProvider('key', undefined, async () => output([
+    { ...decision, rationale: { text: 'The client explicitly requested Friday.', event_ids: ['old'] } },
+    { op: 'add_user_request', text: 'Can you test login?', event_ids: ['new'], question_id: null, kind: 'task' },
+    { op: 'add_user_request', text: 'What do you think?', event_ids: ['new'], question_id: null, kind: 'question' },
+    { op: 'add_user_request', text: 'Explicit request without a subtype.', event_ids: ['new'], question_id: null, kind: null },
+  ]));
+  assert.deepEqual(await provider.propose(input), [
+    { op: 'add_decision', text: decision.text, event_ids: ['new'],
+      rationale: { text: 'The client explicitly requested Friday.', event_ids: ['old'] } },
+    { op: 'add_user_request', text: 'Can you test login?', event_ids: ['new'], kind: 'task' },
+    { op: 'add_user_request', text: 'What do you think?', event_ids: ['new'], kind: 'question' },
+    { op: 'add_user_request', text: 'Explicit request without a subtype.', event_ids: ['new'] },
+  ]);
 });
 
 test('failed OpenAI batches preserve state/cursors and retry the retained transcript', async () => {
@@ -128,11 +159,11 @@ test('dinner acceptance fixture applies mocked proposals without hardcoding a pr
       case 0: return output([{ op: 'open_question', text: current.text, ...evidence }]);
       case 1: return output([]); // preference, not commitment or resolution
       case 2: return output([
-        { op: 'add_decision', text: 'Have burritos for dinner.', supersedes_id: null, ...evidence },
+        { op: 'add_decision', text: 'Have burritos for dinner.', supersedes_id: null, rationale: null, ...evidence },
         { op: 'resolve_question', question_id: sent.active_state.questions[0].id, text: 'Have burritos for dinner.', ...evidence },
       ]);
       case 3: return output([]); // reported assumption, not an assignment
-      default: return output([{ op: 'add_user_request', text: current.text, question_id: null, ...evidence }]);
+      default: return output([{ op: 'add_user_request', text: current.text, question_id: null, kind: 'task', ...evidence }]);
     }
   });
   const store = new InMemoryStore(() => stamp, provider);
@@ -148,7 +179,7 @@ test('dinner acceptance fixture applies mocked proposals without hardcoding a pr
   assert.deepEqual(mention.attention, []);
   assert.deepEqual(store.getState().user_requests, []);
   const request = await store.submit(fixture.batches[4]);
-  assert.equal(request.attention.length, 1);
+  assert.equal(request.attention?.length, 1);
   assert.equal(store.getState().user_requests.length, 1, 'semantic request deduplicates fast path');
   assert.equal(store.getState().user_requests[0]!.explicit_address, true);
   assert.equal(store.lastAnalyzedSeq, 5);

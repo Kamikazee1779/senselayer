@@ -1,4 +1,4 @@
-export interface UserIdentity { name: string; aliases: readonly string[] }
+export interface UserIdentity { name: string; aliases: readonly string[]; language?: string }
 
 export function normalizeText(text: string): string {
   return text.normalize('NFKC').toLocaleLowerCase('en').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();

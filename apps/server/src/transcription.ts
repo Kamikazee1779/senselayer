@@ -1,9 +1,13 @@
+import { userConfig } from './config.js';
+import type { UserIdentity } from './vocative.js';
+
 // The unified WebRTC handshake keeps the long-lived key entirely on the server.
 // Audio travels directly from the browser to OpenAI; it is never stored here.
 export async function createTranscriptionSession(
   sdp: string,
   apiKey = process.env.OPENAI_API_KEY,
   request: typeof fetch = fetch,
+  user: UserIdentity = userConfig(),
 ): Promise<string> {
   if (!apiKey) throw new Error('Live transcription requires OPENAI_API_KEY on the backend. Replay is still available.');
   const form = new FormData();
@@ -11,7 +15,11 @@ export async function createTranscriptionSession(
   form.set('session', JSON.stringify({
     type: 'transcription',
     audio: { input: {
-      transcription: { model: 'gpt-live-transcribe', keywords: ['Emilio'], languages: ['en'] },
+      transcription: {
+        model: 'gpt-live-transcribe',
+        keywords: [...new Set([user.name, ...user.aliases].map(name => name.trim()).filter(Boolean))],
+        languages: [user.language ?? 'en'],
+      },
       turn_detection: null,
     } },
   }));

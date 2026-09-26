@@ -1,155 +1,61 @@
-# SenseLayer demo runbook
+# Project-meeting demo
 
-This runbook is optimized for a short live hackathon demo. The goal is to prove the product thesis, not to expose every internal detail.
+The demo proves one thing: a student can recover a changed plan, its explicit reason and a personal request while the conversation continues. Aim for 90–150 seconds.
 
-## Core message
+## Preparation
 
-> Captions help you follow words. SenseLayer helps you stay part of the conversation.
+- Start frontend/backend with the intended semantic provider. Keep credentials out of the UI and recording.
+- Confirm the configured name and speech language. The rehearsed script below is English, with the default user Emilio.
+- Check microphone access and provider availability before judging.
+- Keep the deterministic replay ready as a clearly labelled fallback.
+- Do not describe automated/mock tests as evidence of real speech recognition or validation with Deaf/HoH users.
 
-The demo should make two capabilities obvious:
+## Live script
 
-1. **Re-entry** — recover what materially changed while the user was not following.
-2. **Relevance** — interrupt only when the conversation explicitly needs the user.
+**0–15 seconds — situation.** Emilio is checking code while two teammates discuss the project demo. Captions are available, but looking at code means looking away from them.
 
-## Pre-demo checklist
+**15–30 seconds — baseline.** Sara says: “For the presentation, we decided to use the desktop version.” Open catch-up and acknowledge this starting point while Emilio is still following.
 
-- Repository is on the intended commit.
-- `pnpm install` has completed.
-- API keys are loaded in the shell, never shown on screen.
-- `CONTEXT_PROVIDER` is set deliberately.
-- Frontend is reachable at `http://127.0.0.1:5173`.
-- Backend is reachable at `http://127.0.0.1:3001`.
-- Microphone permission is granted in Chrome.
-- Physical microphone is selected and tested.
-- Replay fallback is available.
-- Debug panel is closed unless a judge asks for internals.
+**30–60 seconds — missed exchange.** Emilio looks at the code. Speak naturally, leaving short pauses so utterances finalize:
 
-## Recommended live scenario
+1. Marta: “The desktop text is hard to read on the projector.”
+2. Luca: “We could enlarge the text, or use the mobile version.”
+3. Sara: “We decided to use the mobile version instead of desktop, because the text is easier to read on the projector.”
+4. Luca: “Who will present the architecture?”
+5. Sara: “Emilio, can you test the login button on the mobile version now?”
 
-Use short pauses between utterances so live transcription finalizes cleanly.
+**60–85 seconds — recovery.** Emilio opens “I MISSED THAT”. Show the desktop → mobile change, the stated reason, the pending question and the personal task. Emilio responds: “I’ll check the mobile login.” Seeing the request must not mark the work completed.
 
-### 1. Establish an open question
+**85–105 seconds — the present continues.** While the catch-up remains open, Luca says: “I will present the architecture.” The panel stays stable and indicates a newer update. Acknowledge the old snapshot and open the next catch-up to see the resolution.
 
-Say:
+**105–120 seconds — evidence.** Open the decision's source. Show that the suggestion to enlarge desktop text was not recorded as a commitment. Sources make the interpretation inspectable; they do not make the model infallible.
 
-> What should we get for dinner, Chinese or burritos?
+**120–130 seconds — outcome.** Emilio knows the current plan, the reason for the change, and what to do next. Mark the login test completed only after it has actually been done.
 
-Then:
+## Sample conversation and offline checks
 
-> I think Chinese could be good.
+Press **Demo**. One natural English conversation advances automatically, with about five seconds between turns. Four teammates rehearse their presentation, change from desktop to mobile, divide up speaking roles and ask Emilio to check login and review slides. The text contains no instruction labels such as `Question:` or `Decision:`. Its transcript input passes through the same ingestion, reducer and catch-up logic. Use a real semantic provider to interpret the full dialogue. The offline mock recognizes only a subset of its explicit wording; the separate `project-meeting.json` fixture retains the narrow grammar for deterministic engine checks.
 
-Press **I MISSED THAT**.
+Open and acknowledge catch-up near the start to establish a baseline, then look away while the sample continues. Opening the modal does not pause the demo. **Live** stops the demo and starts a fresh session; the microphone button begins capture.
 
-Expected:
+Command-line check:
 
-- the dinner question remains **STILL OPEN**;
-- no decision is invented.
+```sh
+pnpm replay fixtures/project-meeting.json
+```
 
-Acknowledge with **I'm caught up**.
+Replay with a real semantic provider removes the microphone dependency but still exercises model interpretation. Offline mock replay removes both external dependencies. Say which path is being shown.
 
-### 2. Commit a decision
+## Failure behavior to demonstrate during rehearsal
 
-Say:
+- Slow semantics: text and direct attention remain available, and catch-up still opens with an honest processing indicator.
+- Failed semantics: accepted words remain visible; retry interpretation without repeating speech. The microphone remains available.
+- New information during reading: it is offered as a later update, not inserted under the reader's eyes or consumed by the old acknowledgement.
+- Repeated call: after seeing a call, a later “Emilio?” can alert again.
+- Task lifecycle: “Seen” removes the interrupt, but an unfinished task remains in pending requests until completed.
 
-> Actually, let's go with burritos.
+## Claims to keep precise
 
-Press **I MISSED THAT** again.
+The prototype has one shared in-memory session and no live diarization. Replay speaker names are supplied fixture labels. Haptics, wearables, parallel-conversation reconstruction and environmental sound recognition are future work.
 
-Expected:
-
-- burritos appear under **DECIDED**;
-- the previous dinner question is resolved.
-
-Acknowledge with **I'm caught up**.
-
-### 3. Prove mention vs direct address
-
-Say:
-
-> I thought Emilio was going to pick them up.
-
-Expected:
-
-- no direct-attention alert.
-
-Then say:
-
-> Emilio, can you go pick them up?
-
-Expected:
-
-- explicit-vocative fast path fires;
-- priority request appears.
-
-This contrast is the most important moment in the demo.
-
-### 4. Optional resolution
-
-Respond:
-
-> Yeah, I can pick them up.
-
-Expected:
-
-- the related request/question resolves according to the current state lifecycle.
-
-## What to say while demoing
-
-Keep narration simple:
-
-- "This is a real microphone and live transcription."
-- "SenseLayer is not continuously summarizing the transcript. It tracks explicit conversation-state changes."
-- "I MISSED THAT shows only what changed since the last acknowledged catch-up."
-- "Talking about the user is not the same as talking to the user."
-- "Every semantic item is grounded in transcript evidence."
-
-## What not to show unless asked
-
-Avoid distracting from the product story with:
-
-- raw JSON;
-- Zod schemas;
-- provider implementation details;
-- API keys;
-- long debug output;
-- speculative roadmap features presented as if implemented.
-
-## Failure fallbacks
-
-### Microphone / STT fails
-
-Switch to **Demo replay**. Replay enters the same finalized transcript boundary as live speech, so downstream state, catch-up, and UI behavior remain representative.
-
-### Semantic provider fails or latency spikes
-
-Use the deterministic/mock provider or the prepared replay path. Do not debug provider credentials during the pitch.
-
-### Venue noise prevents clean utterance segmentation
-
-Move the microphone closer, use shorter utterances, and pause clearly between them. If segmentation remains unreliable, use replay.
-
-### Network fails
-
-Use the deterministic offline replay. The demo should still prove state lifecycle, catch-up, provenance, and attention behavior.
-
-## Judge questions
-
-### "Isn't this just summarization?"
-
-No. SenseLayer stores explicit state changes and lifecycles. The model proposes evidence-backed semantic operations; application code owns the state. Catch-up is a deterministic diff since the user's last acknowledged watermark.
-
-### "Why not just captions?"
-
-Captions still require continuous visual attention. SenseLayer is designed for moments when the user looks away or needs only the minimum relevant state to re-enter the conversation.
-
-### "What if the model is wrong?"
-
-Semantic operations are constrained to a small schema and must cite actual transcript-event IDs. Invalid or ungrounded operations are rejected by application code. Ambiguous direct-attention cases are intentionally treated conservatively.
-
-### "Why haptics?"
-
-Haptics are a future output modality for direct attention when the user is not looking at a screen. The current hackathon prototype proves the routing event; haptic hardware is not required for the core system.
-
-## Freeze rule
-
-Before judging begins, prefer reliability over new features. Do not introduce database, authentication, diarization, emotion inference, large UI rewrites, or new semantic operation types unless a critical demo blocker requires it.
+Measure end-of-speech → text, text → attention, and text → semantic change separately. A short recovery time is a design target, not an established result for Deaf/HoH users. If participants are available, ask them to recover the current plan, reason and personal request; record misunderstandings as well as successes.
