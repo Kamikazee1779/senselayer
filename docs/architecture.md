@@ -1,10 +1,45 @@
-# SenseLayer foundation
+# SenseLayer architecture
 
-This repository implements the foundation and context engine for the BAINSA “I Missed That” challenge. State is local to one Node process and disappears on restart. The engine includes an optional Claude adapter; it requires no API key by default. Optional [live microphone transcription](live-stt.md) uses OpenAI while replay remains key-free. No database, authentication, or Docker is required.
+SenseLayer is the working context engine and UI prototype for the BAINSA **“I Missed That”** accessibility challenge.
+
+The system is intentionally small: one Node process keeps in-memory state, one React/Vite client renders the experience, and all semantic changes pass through strict application-owned contracts. No database, authentication layer, Redis, Docker, or persistent session storage is required for the hackathon prototype.
+
+The core product split is:
+
+- **Re-entry** — recover material conversation-state changes after the user misses a segment.
+- **Relevance** — detect when the conversation explicitly needs the user now.
+
+## End-to-end flow
+
+```text
+Microphone / Replay
+       ↓
+Realtime STT / finalized fixture events
+       ↓
+finalized TranscriptEvent
+       │
+       ├──────────────→ explicit-vocative fast path
+       │                       ↓
+       │                 immediate attention
+       │
+       └──────────────→ ContextProvider
+                                ↓
+                            DeltaOps
+                                ↓
+                         strict validation
+                                ↓
+                     deterministic reducer
+                                ↓
+                         ContextState
+                                ↓
+                catch-up / priority / provenance UI
+```
+
+Replay and live microphone input converge at the same finalized transcript boundary. Partial STT output is never allowed into semantic reasoning.
 
 ## Run
 
-Use Node 22+ and pnpm 11.25.0 (the version pinned in package.json).
+Use Node 22+ and pnpm 11.25.0.
 
 ```sh
 pnpm install
@@ -15,52 +50,219 @@ pnpm build
 pnpm replay
 ```
 
-`dev` runs Vite on http://127.0.0.1:5173 and the server on http://127.0.0.1:3001. Vite proxies `/api/*` to the server without the `/api` prefix. `build` builds the frontend; the backend runs TypeScript with `pnpm --filter @senselayer/server start`. Shared source is consumed directly by Vite and tsx; no shared build step is needed.
+`pnpm dev` runs:
 
-## Ownership
+- Vite frontend: `http://127.0.0.1:5173`
+- Node backend: `http://127.0.0.1:3001`
 
-- `packages/shared/src/contracts.ts`: shared Zod schemas and inferred TypeScript types. Coordinate contract changes between Engine and UI work.
-- `apps/server/src/state.ts`: finalized transcript boundary, serialized semantic processing, deterministic reducer, transcript/change logs and catch-up watermark. The foundation's synchronous `ingest` callback remains for reducer compatibility tests and refuses to run while async work is queued.
-- `apps/server/src/provider.ts`: `ContextProvider.propose` extends the foundation callback to sync/async proposals over copied state, transcript, `new_events`, and configured user names. The default deterministic provider has a deliberately narrow offline grammar.
-- `apps/server/src/vocative.ts`: exact configured-name/alias detector. Only this application path sets `explicit_address: true`; semantic providers cannot trigger interrupts.
-- `apps/server/src/anthropic.ts` and `config.ts`: optional Claude Messages adapter and environment configuration. Provider output is untrusted and must pass the same reducer validation.
-- `apps/web`: UI work consumes `@senselayer/shared` and the documented HTTP API.
-- `fixtures`: the original three golden reducer fixtures remain unchanged. `engine-replay.json` contains transcript input only, with no semantic operations. `pnpm replay` processes it via `finalize` → `ingestFinalized`, the same boundary used by HTTP and intended for future STT. The replay module cannot read fixture-supplied operations.
-- `tests`: fixture replays, contract invariants, lifecycle rules and HTTP integration checks.
+## Ownership boundaries
 
-The five allowed delta operations remain `set_topic`, `add_decision`, `open_question`, `resolve_question`, and `add_user_request`. Every operation must cite valid transcript IDs and at least one ID in `new_events`. Old citations are allowed only when accompanied by a new citation. The optional transcript argument to `parseDeltaOps` enables this check; without it, the foundation's stricter current-batch-only behavior is preserved. Evidence displayed in catch-up is copied from the actual transcript log, never quoted by the model.
+### Shared contracts
 
-Models propose text, evidence IDs and existing entity references. Two optional reference fields extend existing operations: `add_decision.supersedes_id` and `add_user_request.question_id`. Strict schemas reject model-supplied new IDs, timestamps, lifecycle fields, quotations and arbitrary patches. Application code assigns monotonic IDs and clock timestamps, reduces onto a copy, and commits only after the semantic batch succeeds. Failed batches may consume IDs but cannot partially commit semantic state.
+`packages/shared/src/contracts.ts`
 
-Question status is derived from the existing `resolution` field (`null` means open); there is no dropped state. A correction retains the old decision and sets its application-owned `superseded_by`. Request status is derived by `requestStatus`: `resolved_at` means resolved, otherwise `acknowledged_at` means acknowledged, otherwise active. Resolving a related question also resolves its active requests. Acknowledged requests stay acknowledged. Same-batch question/request pairs with identical text and overlapping evidence are linked by application code without invented IDs. Repeated normalized topic/decision/open-question/request content does not create duplicate records; meaningful punctuation is preserved.
+Contains shared Zod schemas and inferred TypeScript types. Contract changes affect both Engine and UI and should be coordinated.
 
-## Processing and configuration
+### Deterministic state engine
 
-`TranscriptEvent` means a finalized event. The existing HTTP body stays `{ events: [{ speaker, text }] }`; application code stamps IDs/timestamps. Strict schemas reject partial/finality metadata rather than silently reasoning over it. A future STT adapter must drop all partial callbacks and pass only finals into `finalize`/`ingestFinalized`. Speaker labels are supplied data, never inferred identities. Re-ingesting an identical finalized event ID is idempotent; changing its content is rejected.
+`apps/server/src/state.ts`
 
-The application detector checks exact names/aliases after case/punctuation normalization. It conservatively accepts standalone names and sentence-leading vocatives such as `Hey Emilio` and `Emilio, can you…`; third-person mentions and assignments never interrupt. It creates an ordinary user request marked `explicit_address` immediately, even while semantics waits. Such requests are readable through `GET /state`; `POST /transcript` also returns their IDs in `attention`. No streaming transport is introduced. Failed semantic processing does not undo an already detected explicit address.
+Owns:
 
-Each session serializes provider calls. Semantic batches contain one finalized event so later events can reference entities created by earlier events, even inside one HTTP request. `lastAnalyzedSeq` counts successfully applied transcript events, including valid empty proposals. On provider/validation failure it remains at the last committed event; the transcript suffix stays available for `analyze()` retry or the next submission. A multi-event request can have a successfully committed prefix. Reset invalidates in-flight results before they can commit, clears logs/cursors/state, and does not recycle acknowledgement IDs.
+- finalized transcript ingestion;
+- serialized semantic processing;
+- reducer application;
+- transcript and change logs;
+- catch-up watermark;
+- acknowledgement lifecycle;
+- retry cursor (`lastAnalyzedSeq`);
+- reset invalidation.
 
-Environment variables (set in the launching shell):
+Application code, not the model, owns all IDs, timestamps, lifecycle fields, state mutation, and watermarks.
 
-- `CONTEXT_PROVIDER=mock` (default) or `claude`.
-- `SENSELAYER_USER_NAME=Emilio` (default); `SENSELAYER_USER_ALIASES` is a comma-separated list of explicit aliases.
-- Claude mode requires both `ANTHROPIC_API_KEY` and `ANTHROPIC_MODEL`. There is no automatic fallback that hides configuration/provider errors. The adapter uses native fetch, a 15-second timeout, and validates complete JSON responses. It follows the [Claude Messages API](https://platform.claude.com/docs/en/api/messages/create).
+### Provider boundary
 
-The offline provider recognizes `Topic: …`, `Decision: …`, `We decided to …`, `We agreed to …`, `Correction: <old text> => <new text>`, `Question: …?`, and `Answer: <question text> => <answer>`. Explicit user questions and `<configured name> will …` assignments are also supported. Other text yields no changes. This is a deterministic demo grammar, not general natural-language understanding. It does not infer emotion, intent, or identity. Claude proposes only the same five operations; it cannot move cursors, mutate state, or mark interrupts.
+`apps/server/src/provider.ts`
+
+`ContextProvider.propose(...)` receives copied current state, recent transcript context, explicit `new_events`, and configured user identity. Providers may propose semantic operations only.
+
+Available modes:
+
+- `mock` — deterministic offline provider;
+- `openai` — structured semantic extraction through OpenAI;
+- `claude` — Anthropic / Claude adapter.
+
+All provider output is untrusted and must pass the same schema and evidence validation before the reducer can apply it.
+
+### Explicit-address fast path
+
+`apps/server/src/vocative.ts`
+
+Checks the configured user name / aliases deterministically after normalization.
+
+Examples:
+
+```text
+“I thought Emilio was doing it.”      → no interrupt
+“Emilio can handle deployment.”       → no interrupt
+“Could Emilio handle deployment?”     → no interrupt
+“Emilio, can you handle deployment?”  → explicit address
+```
+
+Only application code can mark a request as an explicit-address attention event. Semantic providers cannot trigger the interrupt channel directly.
+
+### Provider adapters
+
+- `apps/server/src/openai.ts` — OpenAI context provider.
+- `apps/server/src/anthropic.ts` — Claude context provider.
+- `apps/server/src/config.ts` — provider selection and user identity configuration.
+
+### Live microphone path
+
+The browser establishes a transcription-only WebRTC session through the backend. The long-lived API key remains server-side. Completed transcription events become finalized `TranscriptEvent`s and flow through the same ingestion path as replay.
+
+See [`live-stt.md`](live-stt.md).
+
+### UI
+
+`apps/web`
+
+Consumes the shared contracts and backend HTTP API. The normal UI remains intentionally quiet; technical state is separated into developer/debug views.
+
+## Semantic operation contract
+
+Exactly five delta operations are allowed:
+
+- `set_topic`
+- `add_decision`
+- `open_question`
+- `resolve_question`
+- `add_user_request`
+
+Every semantic operation must:
+
+1. cite valid transcript-event IDs;
+2. cite at least one event from the current `new_events` batch.
+
+Old context may be cited only when accompanied by current-batch evidence.
+
+The model never supplies application-owned IDs, timestamps, lifecycle fields, watermarks, or fabricated evidence quotations.
+
+Provenance shown in the UI is reconstructed from the actual transcript log.
+
+## State lifecycle
+
+### Decisions
+
+Decisions are append-only. Corrections supersede earlier decisions rather than deleting history. Application code owns `superseded_by` relationships.
+
+### Questions
+
+Questions are either open (`resolution == null`) or resolved. There is no inferred `dropped` state.
+
+### User requests
+
+A request is:
+
+- active;
+- acknowledged;
+- resolved.
+
+Request acknowledgement is independent from catch-up acknowledgement. Resolving a linked question also resolves its still-active request.
+
+### Duplicate protection
+
+Repeated normalized topic, decision, open-question, and request content is prevented from creating duplicate semantic state.
+
+## Processing guarantees
+
+Semantic processing is serialized per session.
+
+`lastAnalyzedSeq` advances only after a provider result has been successfully parsed, validated, reduced, and committed.
+
+On provider failure:
+
+- finalized transcript remains stored;
+- the semantic cursor does not advance past the failed event;
+- state is not partially committed;
+- the same suffix can be retried.
+
+Reset invalidates in-flight semantic results before they can commit.
+
+## Catch-up semantics
+
+`I MISSED THAT` is a deterministic state-change query, not a generic LLM summary.
+
+Opening a catch-up captures an immutable upper bound. Pressing the button does **not** move the watermark.
+
+Only after the user acknowledges with **I'm caught up** does the watermark advance to that saved upper bound.
+
+Changes that arrive while the catch-up panel is open remain unseen and therefore appear in the next catch-up.
+
+Request acknowledgement does not move the catch-up watermark.
+
+## Environment configuration
+
+Set variables in the shell that launches `pnpm dev`.
+
+```text
+CONTEXT_PROVIDER=mock | openai | claude
+SENSELAYER_USER_NAME=Emilio
+SENSELAYER_USER_ALIASES=
+```
+
+### OpenAI
+
+```text
+OPENAI_API_KEY=<secret>
+OPENAI_CONTEXT_MODEL=gpt-5.6-terra
+```
+
+`OPENAI_API_KEY` is also used by the live transcription handshake. Never expose it through `VITE_*` variables.
+
+### Anthropic / Claude
+
+```text
+ANTHROPIC_API_KEY=<secret>
+ANTHROPIC_MODEL=<model-id>
+```
+
+There is no silent provider fallback hiding configuration errors.
+
+See [`.env.example`](../.env.example) and [`openai-context.md`](openai-context.md).
+
+## Deterministic provider
+
+The offline provider intentionally recognizes only a narrow grammar such as explicit topics, decisions, questions, answers, corrections, and direct assignments. Other language may yield no semantic changes.
+
+It exists for deterministic replay and fallback, not as a claim of general language understanding.
 
 ## HTTP contracts
 
-All responses are JSON. Successful routes return 200. Invalid bodies return 400; missing acknowledgement targets and unknown routes return 404; failed semantic processing returns 503 with finalized events retained for retry; unexpected failures return 500. Errors have `{ "error": "..." }`. Empty-body POSTs accept `{}` or no body. Exact response schemas/types live in `packages/shared`.
+All responses are JSON.
 
 | Route | Request | Response |
 | --- | --- | --- |
-| `POST /transcript` | `{ events: [{ speaker, text }] }` (nonempty, finalized only) | `{ new_events: TranscriptEvent[], state: ContextState, attention: string[] }` |
-| `GET /state` | None | `ContextState` |
-| `POST /catchup` | `{}` | `{ id, created_at, state, acknowledged_at, from_seq, upper_bound, changes }` |
-| `POST /catchup/ack` | `{ catchup_id }` | The catch-up with `acknowledged_at` populated |
-| `POST /attention/:id/ack` | `{}`; ID is an existing `UserRequest.id` | The user request with `acknowledged_at` populated |
-| `POST /reset` | `{}` | Empty `ContextState` |
+| `POST /transcript` | finalized transcript event(s) | new events, current state, attention IDs |
+| `GET /state` | none | current `ContextState` |
+| `POST /catchup` | `{}` | saved catch-up snapshot + change window |
+| `POST /catchup/ack` | `{ catchup_id }` | acknowledged catch-up |
+| `POST /attention/:id/ack` | `{}` | acknowledged request |
+| `POST /reset` | `{}` | empty state |
+| `POST /transcription/session` | SDP offer | SDP answer for live transcription session |
 
-Catch-up is deterministic: `changes` contains committed material changes with `from_seq < seq <= upper_bound`. It also retains the foundation's immutable `state` snapshot. The change sequence is separate from transcript sequence: delayed semantic results must remain unseen even if their transcript arrived before the user opened a panel. Pressing catch-up never moves the watermark. Acknowledging a saved catch-up advances it to `max(current, that catchup.upper_bound)`; unknown IDs cannot advance it and old acknowledgements cannot move it backward. Later changes stay available for the next catch-up. Request acknowledgement is independent and does not move the catch-up watermark.
+Invalid request bodies return 400-class errors; provider/semantic failures retain finalized transcript for retry and surface as service errors rather than silently corrupting state.
+
+## Design constraints
+
+SenseLayer deliberately avoids:
+
+- emotion inference;
+- sarcasm inference;
+- psychological interpretation;
+- diarization as a core dependency;
+- model-owned application state;
+- generic rolling summaries;
+- hidden evidence generation.
+
+The prototype optimizes for explicit, inspectable, defensible state changes and predictable demo behavior.
