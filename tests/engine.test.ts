@@ -49,7 +49,7 @@ test('explicit address is immediate even while semantics waits; assignments prod
   store.acknowledgeAttention(request.id);
   waiting.release();
   assert.deepEqual((await pending).attention, [request.id]);
-  assert.equal(requestStatus(store.getState().user_requests[0]!), 'acknowledged');
+  assert.equal(requestStatus(store.getState().user_requests[0]!), 'resolved');
   const slow = new InMemoryStore(now);
   assert.deepEqual((await say(slow, 'Emilio will handle deployment')).attention, []);
   assert.equal(slow.getState().user_requests[0]!.explicit_address, undefined);
@@ -88,8 +88,8 @@ test('deduplication preserves semantic punctuation and can supersede into an exi
 test('questions and related active requests resolve deterministically in multi-event input', async () => {
   const store = new InMemoryStore(now);
   await store.submit({ events: [
-    { speaker: 'Ari', text: 'Emilio, can you review?' },
-    { speaker: 'Sam', text: 'Answer: Emilio, can you review? => Emilio explicitly confirmed.' },
+    { speaker: 'Ari', text: 'Emilio, what do you think?' },
+    { speaker: 'Sam', text: 'Answer: Emilio, what do you think? => Emilio explicitly agreed.' },
   ] });
   const state = store.getState();
   assert.equal(state.questions.length, 1);
@@ -264,5 +264,5 @@ test('replay and HTTP-adapter ingestion produce identical engine state without f
   assert.equal(caught.state.decisions.length, 2);
   assert.ok(caught.state.decisions[0]!.superseded_by);
   assert.ok(caught.state.questions.every(question => questionStatus(question) === 'resolved'));
-  assert.equal(caught.state.user_requests.filter(request => requestStatus(request) === 'resolved').length, 1);
+  assert.equal(caught.state.user_requests.filter(request => request.kind === 'task' && !request.resolved_at).length, 2);
 });

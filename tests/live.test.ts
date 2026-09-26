@@ -4,6 +4,7 @@ import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import { FinalTranscripts } from '../apps/web/src/live.js';
 import { createTranscriptionSession } from '../apps/server/src/transcription.js';
+import { userConfig } from '../apps/server/src/config.js';
 import { createApp } from '../apps/server/src/server.js';
 import { InMemoryStore } from '../apps/server/src/state.js';
 import { TranscriptResponseSchema } from '../packages/shared/src/index.js';
@@ -60,9 +61,22 @@ test('live and replay share the existing engine boundary; interim input is rejec
   assert.deepEqual(TranscriptResponseSchema.parse(await (await post('/transcript', live)).json()).new_events, []);
   assert.equal((await post('/transcript', { events: [{ speaker: 'Ari', text: 'Decision: Ship tomorrow.' }] })).status, 200);
   assert.equal(store.getTranscript().length, 2);
+  await store.analyze();
   assert.equal(store.getState().decisions.length, 1);
   const session = await post('/transcription/session', { sdp: 'v=0\r\noffer' });
   assert.equal(session.status, 200);
   assert.equal(session.headers.get('cache-control'), 'no-store');
   assert.deepEqual(await session.json(), { sdp: 'v=0\r\nanswer' });
+});
+
+test('transcription and semantic identity share configured names and language', async () => {
+  const user = userConfig({ SENSELAYER_USER_NAME: 'Ari', SENSELAYER_USER_ALIASES: ' Ar, Ari ', SENSELAYER_LANGUAGE: 'en' });
+  assert.equal(user.name, 'Ari');
+  const mockedFetch: typeof fetch = async (_url, options) => {
+    const session = JSON.parse(String((options?.body as FormData).get('session')));
+    assert.deepEqual(session.audio.input.transcription.keywords, ['Ari', 'Ar']);
+    assert.deepEqual(session.audio.input.transcription.languages, ['en']);
+    return new Response('v=0\r\nanswer');
+  };
+  await createTranscriptionSession('v=0\r\noffer', 'test-key', mockedFetch, user);
 });

@@ -1,0 +1,18 @@
+{
+  "batches": [
+    { "events": [
+      { "speaker": "Sara", "text": "Topic: Preparing our project demo" },
+      { "speaker": "Sara", "text": "Decision: Use the desktop version." }
+    ] },
+    { "events": [{ "speaker": "Marta", "text": "I thought Emilio was going to present the architecture." }] },
+    { "events": [{ "speaker": "Luca", "text": "We could enlarge the desktop text, or try the mobile version." }] },
+    { "events": [
+      { "speaker": "Sara", "text": "Correction: Use the desktop version. => Use the mobile version because the text is easier to read on the projector." },
+      { "speaker": "Luca", "text": "Question: Who will present the architecture?" }
+    ] },
+    { "events": [{ "speaker": "Sara", "text": "Emilio, can you test the login button on the mobile version now?" }] },
+    { "events": [{ "speaker": "Marta", "text": "The demo starts in ten minutes; let's keep moving." }] },
+    { "events": [{ "speaker": "Luca", "text": "Answer: Who will present the architecture? => Luca will present the architecture." }] },
+    { "events": [{ "speaker": "Emilio", "text": "I can test the login button now." }] }
+  ]
+}

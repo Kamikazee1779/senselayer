@@ -13,17 +13,26 @@ sarcasm, jealousy, implicit intent or any unstated intention. Record only explic
 Return ONLY a JSON array (no markdown). Return [] when nothing materially changed.
 Allowed strict operation objects:
 {"op":"set_topic","text":"...","event_ids":["..."]}
-{"op":"add_decision","text":"...","event_ids":["..."],"supersedes_id":"optional existing decision ID"}
+{"op":"add_decision","text":"...","event_ids":["..."],"supersedes_id":"optional existing decision ID","rationale":{"text":"explicit reason","event_ids":["real reason source"]}}
 {"op":"open_question","text":"...","event_ids":["..."]}
 {"op":"resolve_question","text":"explicit answer","question_id":"existing open question ID","event_ids":["..."]}
-{"op":"add_user_request","text":"...","event_ids":["..."],"question_id":"optional existing open question ID"}
+{"op":"add_user_request","text":"...","event_ids":["..."],"question_id":"optional existing open question ID","kind":"question or task"}
 Omit optional keys if absent. Do not generate new IDs, timestamps, state, lifecycle flags, evidence quotations,
 watermarks, or alerts. Only reference existing IDs. Every operation must cite real transcript IDs and at least
 one from new_events. Do not repeat existing context. Proposals are not decisions. Corrected decisions must
 reference the existing decision via supersedes_id; never delete history. Only resolve explicitly answered
 questions. Add user requests only when explicitly addressed or explicitly assigned to the configured user;
-ordinary name mentions are not requests. For a new question directed to the user, emit open_question and
-add_user_request with identical text and evidence; application code will link them. Never mark alerts.`;
+ordinary name mentions are not requests. Use kind=task for requests to do work, including "can you test login?";
+use kind=question for requests for an answer, information or an opinion, including "what do you think?".
+For a new conversational question directed to the user, emit open_question and add_user_request(kind=question)
+with identical text and evidence; application code will link them. Do not create an open question just because
+a task is phrased as a question. Task acceptance or acknowledgement is not completion; acknowledged tasks
+in the supplied state can still be incomplete. Do not repeat them or resolve them as questions.
+A fast-path request can already exist; the application enriches its kind and text using shared evidence IDs.
+For a decision, rationale is optional and must cite speech explicitly stating why that decision was made.
+Keep decision text separate from its reason. Reason evidence can be older transcript events. Omit rationale
+when no explicit causal link is stated: proximity and plausibility are not reasons. Never invent causality,
+infer urgency, or mark alerts.`;
 
 // Native fetch keeps the adapter optional and avoids another runtime dependency.
 export class AnthropicProvider implements ContextProvider {

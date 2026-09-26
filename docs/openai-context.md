@@ -1,8 +1,8 @@
-# Temporary OpenAI context provider
+# Interchangeable OpenAI context adapter
 
 The existing provider interface now accepts `CONTEXT_PROVIDER=openai`. It uses the official OpenAI Node SDK and Responses API with strict structured output. `OPENAI_CONTEXT_MODEL` defaults to `gpt-5.6-terra`; `OPENAI_API_KEY` stays on the server and is shared with the existing STT setup. `mock` is still the default. Switch back to `CONTEXT_PROVIDER=claude` with the existing Anthropic variables without changing other code.
 
-The model receives active semantic state, up to 40 older transcript events, the explicit `new_events` batch, and configured user names. Instructions distinguish commitments from preferences, explicit answers from speculation, and actionable requests from ordinary name mentions. There is no phrase-based production classifier or new operation type.
+The model receives active semantic state (including seen but unfinished tasks), up to 40 older transcript events, the explicit `new_events` batch, and configured user names. Instructions distinguish commitments from preferences, explicit answers from speculation, and actionable requests from ordinary name mentions. Decision proposals may include an optional explicit rationale with its own source IDs. Request proposals distinguish conversational questions from tasks; accepting a task does not complete it. No new semantic operation type is required. Vendor-specific nullable fields are normalized inside the adapter. The common reducer validates every proposal regardless of provider.
 
 The SDK's strict schema requires nullable optional reference fields; the adapter removes null references and passes proposals through the existing `parseDeltaOps`. Every citation must exist and at least one must belong to the new batch. The reducer still validates and owns all mutations, IDs, timestamps, lifecycles, supersession and watermarks. Requests have a 15-second SDK timeout and no automatic SDK retries. Existing application retry/cursor behavior is unchanged. API refusals, incomplete output, invalid JSON/schema/evidence and errors fail the batch.
 
@@ -19,25 +19,11 @@ pnpm dev
 
 Do not use `VITE_OPENAI_API_KEY`. No new API key or STT changes are needed. Existing Claude variables are unused in OpenAI mode.
 
-In another PowerShell terminal at the repository root, run this against your local demo session. It resets that session, sends each dinner fixture batch to the real semantic provider, and checks the requested milestones:
+Open the app and follow the project-meeting script in [demo.md](demo.md). Observe processing status: `POST /transcript` confirms acceptance, not completion of model interpretation. To automate acceptance, poll `GET /session` until `processing.status` is `ready` before checking `state`; fail the check on `error`.
 
-```powershell
-$base = 'http://127.0.0.1:3001'
-Invoke-RestMethod "$base/reset" -Method Post -ContentType 'application/json' -Body '{}' | Out-Null
-$fixture = Get-Content fixtures/dinner-context.json -Raw | ConvertFrom-Json
-for ($i = 0; $i -lt $fixture.batches.Count; $i++) {
-  $body = $fixture.batches[$i] | ConvertTo-Json -Depth 10 -Compress
-  $result = Invoke-RestMethod "$base/transcript" -Method Post -ContentType 'application/json' -Body $body
-  $state = $result.state
-  if ($i -eq 1 -and (@($state.questions | Where-Object { $null -eq $_.resolution }).Count -ne 1 -or @($state.decisions).Count -ne 0)) { throw 'Preference incorrectly changed dinner semantics' }
-  if ($i -eq 2 -and (@($state.decisions | Where-Object { $_.text -match 'burrito' }).Count -lt 1 -or @($state.questions | Where-Object { $null -ne $_.resolution }).Count -lt 1)) { throw 'Commitment did not decide and resolve dinner' }
-  if ($i -eq 3 -and (@($state.user_requests).Count -ne 0 -or @($result.attention).Count -ne 0)) { throw 'Ordinary mention became actionable' }
-  if ($i -eq 4 -and (@($state.user_requests).Count -ne 1 -or @($result.attention).Count -ne 1)) { throw 'Direct request was not captured' }
-  $result | ConvertTo-Json -Depth 15
-}
-```
+Check that a suggestion creates no decision, a committed correction replaces the previous plan, an explicit reason has valid sources, and a seen task remains pending until completed. Verify sources through the catch-up panel. Record actual latency separately from simulated tests.
 
-Then open http://127.0.0.1:5173, reset, and repeat the five fixture utterances with **Start microphone**, pausing for each final transcript. Inspect catch-up and priority cards. This manual run exercises real language understanding; automated tests deliberately mock OpenAI and cannot prove model accuracy. The existing `pnpm replay` remains the deterministic offline check, regardless of provider environment variables.
+The model adapter remains replaceable through `ContextProvider` and `CONTEXT_PROVIDER`; speech recognition is configured separately. A provider switch requires no UI or reducer changes. No automatic fallback conceals provider errors.
 
 ## Automated checks
 

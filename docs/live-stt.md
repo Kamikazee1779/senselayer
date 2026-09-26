@@ -15,7 +15,7 @@ Open http://127.0.0.1:5173 in Chrome. Click **Start microphone**, grant permissi
 
 ## Boundary and transport
 
-The browser posts an SDP offer to `POST /transcription/session` as `{ sdp }`. The backend uses the long-lived key to create a transcription-only session at OpenAI `/v1/realtime/calls`, returning only the SDP answer. No key, including a temporary key, needs to reach the browser. Audio goes directly to OpenAI over WebRTC and is not stored by SenseLayer. The session fixes `gpt-live-transcribe`, English language guidance, and `keywords: ["Emilio"]`.
+The browser posts an SDP offer to `POST /transcription/session` as `{ sdp }`. The backend uses the long-lived key to create a transcription-only session at OpenAI `/v1/realtime/calls`, returning only the SDP answer. No key, including a temporary key, needs to reach the browser. Audio goes directly to OpenAI over WebRTC and is not stored by SenseLayer. The session uses `gpt-live-transcribe`. Speech language guidance comes from `SENSELAYER_LANGUAGE` (default `en`); keywords come from `SENSELAYER_USER_NAME` (default `Emilio`) and configured aliases. These are the same identity settings exposed to the UI and semantic engine. Changing recognition guidance does not add multilingual direct-address understanding; English remains the rehearsed demo language.
 
 This model requires explicit audio commits, so a browser Web Audio RMS detector commits after 800 ms of silence following speech. This intentionally small detector is sensitive to background noise; quiet speech/noisy rooms need real-device testing. It adds no diarization or speaker identification. The `Microphone` label describes the input, not a person.
 
@@ -25,7 +25,7 @@ Only `conversation.item.input_audio_transcription.completed` events become trans
 {"id":"live-<session>-1","seq":1,"text":"Emilio, can you review the demo?","final":true,"source":"live","receivedAt":"2026-09-25T12:00:00.000Z"}
 ```
 
-The existing `/transcript` route validates this shape and maps `receivedAt` to the legacy `timestamp` plus the neutral `Microphone` label. Live metadata remains on the resulting `TranscriptEvent`. Both inputs converge at `InMemoryStore.ingestFinalized`; semantic processing, vocative detection, acknowledgements and catch-up are unchanged. Existing replay requests and fixtures retain their shape. A failed submission stops live capture visibly; no automatic retry can silently duplicate speech.
+The existing `/transcript` route validates this shape and maps `receivedAt` to the legacy `timestamp` plus the neutral `Microphone` label. Live metadata remains on the resulting `TranscriptEvent`. Both inputs converge at `InMemoryStore.ingestFinalized`; semantic processing, vocative detection, acknowledgements and catch-up remain provider-independent. The HTTP path returns after acceptance; queued interpretation is observed through `/session`. Existing replay requests and fixtures retain their shape. HTTP accepts finalized text without waiting for semantic analysis. Interpretation failures are reported separately through `/session` and do not stop live capture. A failed text submission or speech connection still stops capture visibly; no automatic resubmission can silently duplicate speech. Use the analysis retry control to retry retained text without re-ingesting it.
 
 ## Checks
 

@@ -28,12 +28,15 @@ export const LiveTranscriptSchema = z.object({
 }).strict();
 export type LiveTranscript = z.infer<typeof LiveTranscriptSchema>;
 
+export const RationaleSchema = z.object({ text: TextSchema, event_ids: EvidenceSchema }).strict();
+
 export const DecisionSchema = z.object({
   id: IdSchema,
   created_at: TimestampSchema,
   text: TextSchema,
   event_ids: EvidenceSchema,
   superseded_by: IdSchema.optional(),
+  rationale: RationaleSchema.optional(),
 }).strict();
 export type Decision = z.infer<typeof DecisionSchema>;
 
@@ -59,6 +62,7 @@ export const UserRequestSchema = z.object({
   question_id: IdSchema.optional(),
   resolved_at: TimestampSchema.optional(),
   explicit_address: z.literal(true).optional(),
+  kind: z.enum(['attention', 'question', 'task']).optional(),
 }).strict();
 export type UserRequest = z.infer<typeof UserRequestSchema>;
 
@@ -81,13 +85,13 @@ export type ContextState = z.infer<typeof ContextStateSchema>;
 // timestamps, acknowledgement flags, or arbitrary state patches are accepted.
 export const DeltaOpSchema = z.discriminatedUnion('op', [
   z.object({ op: z.literal('set_topic'), text: TextSchema, event_ids: EvidenceSchema }).strict(),
-  z.object({ op: z.literal('add_decision'), text: TextSchema, event_ids: EvidenceSchema, supersedes_id: IdSchema.optional() }).strict(),
+  z.object({ op: z.literal('add_decision'), text: TextSchema, event_ids: EvidenceSchema, supersedes_id: IdSchema.optional(), rationale: RationaleSchema.optional() }).strict(),
   z.object({ op: z.literal('open_question'), text: TextSchema, event_ids: EvidenceSchema }).strict(),
   z.object({
     op: z.literal('resolve_question'), question_id: IdSchema,
     text: TextSchema, event_ids: EvidenceSchema,
   }).strict(),
-  z.object({ op: z.literal('add_user_request'), text: TextSchema, event_ids: EvidenceSchema, question_id: IdSchema.optional() }).strict(),
+  z.object({ op: z.literal('add_user_request'), text: TextSchema, event_ids: EvidenceSchema, question_id: IdSchema.optional(), kind: z.enum(['question', 'task']).optional() }).strict(),
 ]);
 export type DeltaOp = z.infer<typeof DeltaOpSchema>;
 
@@ -110,6 +114,14 @@ export function parseDeltaOps(input: unknown, new_events: readonly TranscriptEve
           });
         }
       });
+      if (op.op === 'add_decision' && op.rationale) {
+        op.rationale.event_ids.forEach((id, evidenceIndex) => {
+          if (!validIds.has(id)) ctx.addIssue({
+            code: z.ZodIssueCode.custom, path: [index, 'rationale', 'event_ids', evidenceIndex],
+            message: 'Rationale evidence must belong to the transcript log',
+          });
+        });
+      }
     });
   }).parse(input);
 }
@@ -117,10 +129,31 @@ export function parseDeltaOps(input: unknown, new_events: readonly TranscriptEve
 export const TranscriptRequestSchema = z.object({
   events: z.array(z.object({ speaker: TextSchema, text: TextSchema }).strict()).min(1),
 }).strict();
+export const ProcessingSchema = z.object({
+  status: z.enum(['ready', 'processing', 'error']),
+  received_seq: z.number().int().nonnegative(),
+  analyzed_seq: z.number().int().nonnegative(),
+  analyzed_at: TimestampSchema.nullable(),
+  error: z.string().nullable(),
+}).strict();
+export type Processing = z.infer<typeof ProcessingSchema>;
+export const SessionResponseSchema = z.object({
+  state: ContextStateSchema,
+  events: z.array(TranscriptEventSchema),
+  processing: ProcessingSchema,
+  change_seq: z.number().int().nonnegative(),
+  acknowledged_seq: z.number().int().nonnegative(),
+  acknowledged_at: TimestampSchema.nullable(),
+  revision: z.number().int().nonnegative(),
+  user: z.object({ name: TextSchema, language: TextSchema }).strict(),
+}).strict();
+export type SessionResponse = z.infer<typeof SessionResponseSchema>;
 export const TranscriptResponseSchema = z.object({
   new_events: z.array(TranscriptEventSchema),
   state: ContextStateSchema,
   attention: z.array(IdSchema).optional(),
+  processing: ProcessingSchema,
+  revision: z.number().int().nonnegative(),
 }).strict();
 export const StateResponseSchema = ContextStateSchema;
 export const CatchupRequestSchema = z.object({}).strict();
@@ -141,6 +174,8 @@ export const CatchupResponseSchema = z.object({
   from_seq: z.number().int().nonnegative(),
   upper_bound: z.number().int().nonnegative(),
   changes: z.array(SemanticChangeSchema),
+  processing: ProcessingSchema,
+  from_time: TimestampSchema.nullable(),
 }).strict();
 export const CatchupAckRequestSchema = z.object({ catchup_id: IdSchema }).strict();
 export const CatchupAckResponseSchema = CatchupResponseSchema;

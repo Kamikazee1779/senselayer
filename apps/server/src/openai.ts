@@ -9,12 +9,13 @@ import type { ContextInput, ContextProvider } from './provider.js';
 const options = DeltaOpSchema.options;
 // Text trimming stays in the application validator; JSON Schema cannot encode it.
 const text = z.string().min(1);
+const rationale = z.object({ text, event_ids: z.array(IdSchema).min(1) }).strict();
 const OutputSchema = z.object({ ops: z.array(z.union([
   options[0].extend({ text }),
-  options[1].extend({ text, supersedes_id: IdSchema.nullable() }),
+  options[1].extend({ text, supersedes_id: IdSchema.nullable(), rationale: rationale.nullable() }),
   options[2].extend({ text }),
   options[3].extend({ text }),
-  options[4].extend({ text, question_id: IdSchema.nullable() }),
+  options[4].extend({ text, question_id: IdSchema.nullable(), kind: z.enum(['question', 'task']).nullable() }),
 ])) }).strict();
 
 const instructions = `Propose conservative semantic DeltaOps for a conversation accessibility engine.
@@ -27,18 +28,28 @@ Explicit unresolved questions can open questions. A preference following a quest
 Only an explicit compatible answer or commitment resolves an existing open question. When supported,
 propose both resolution and decision. Use the existing question_id; do not guess missing references.
 Direct questions or explicit task assignments to the configured user can be user requests.
+Use kind=task for requests to do work, including polite questions such as "can you test login?".
+Use kind=question for requests for an answer, information or an opinion, such as "what do you think?".
+Task acceptance is not task completion. Acknowledged tasks in active_state remain incomplete;
+do not repeat them, resolve them as questions, or infer completion from acknowledgement.
 Speculation about what the user might do or reports about what someone thought they would do are not requests.
 Ordinary name mentions are not actionable. Never infer identity, emotion, sarcasm or unstated intent.
-For a new question directed to the user, propose open_question and add_user_request with identical
+For a new conversational question directed to the user, propose open_question and add_user_request(kind=question) with identical
 text and evidence; the application links them. A matching fast-path request may already exist;
-the application deduplicates it. Do not otherwise repeat existing semantic items.
+the application enriches its kind and text using the shared source IDs. Do not otherwise repeat existing semantic items.
+Do not open a question merely because a task request uses interrogative wording.
 Explicit corrections of active decisions use supersedes_id; never delete history.
+Decision rationale is optional: include {text,event_ids} only when speech explicitly states the reason
+for that decision. Keep the decision itself separate from its reason. Cite the real source of the reason,
+which can be in older_context. Temporal proximity or a plausible explanation does not establish causality.
+If the reason is unstated or ambiguous, return rationale=null. Never invent reasons or infer urgency.
 All operations require real transcript event_ids and at least one ID from new_events.
 Never fabricate evidence IDs or evidence quotations. Evidence is looked up by application code.
 Never generate application IDs, timestamps, lifecycle flags, alerts or UI behavior; never mutate
 state or move watermarks. Existing entity IDs may only be referenced for resolution, supersession
 or linking to an existing question. Application code alone controls immediate attention.
-Return only the structured ops object. Use null for absent optional question_id or supersedes_id.`;
+Return only the structured ops object. Use null for absent optional question_id, supersedes_id,
+rationale or kind; prefer an explicit question/task kind when the request is clear.`;
 
 export class OpenAIContextProvider implements ContextProvider {
   private readonly client: OpenAI;
@@ -58,7 +69,8 @@ export class OpenAIContextProvider implements ContextProvider {
       topic: input.state.topic,
       decisions: input.state.decisions.filter(item => !item.superseded_by),
       questions: input.state.questions.filter(item => !item.resolution),
-      user_requests: input.state.user_requests.filter(item => requestStatus(item) === 'active'),
+      user_requests: input.state.user_requests.filter(item => requestStatus(item) === 'active' ||
+        (item.kind === 'task' && requestStatus(item) !== 'resolved')),
     };
     const newIds = new Set(input.new_events.map(event => event.id));
     const older_context = input.transcript.filter(event => !newIds.has(event.id)).slice(-40);

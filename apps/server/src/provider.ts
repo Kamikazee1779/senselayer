@@ -18,6 +18,18 @@ export interface ContextProvider {
 
 // Intentionally narrow, documented grammar for offline demos and tests.
 // It reads transcript text and state, never fixture-supplied operations.
+// Decision/Correction payloads may end in " because <explicit reason>".
+// Direct questions using can/could/would/will you + a listed work verb are
+// tasks; other direct questions are questions. This is not a general classifier.
+const workRequest = /\b(?:can|could|would|will)\s+you\s+(?:please\s+)?(?:check|test|review|build|fix|send|bring|prepare|present|deploy|pick\s+up)\b/i;
+
+function decisionContent(value: string, eventId: string) {
+  const cause = /^(.+?)\s+because\s+(.+)$/i.exec(value);
+  return cause
+    ? { text: cause[1]!.trim(), rationale: { text: cause[2]!.trim(), event_ids: [eventId] } }
+    : { text: value };
+}
+
 export class DeterministicProvider implements ContextProvider {
   propose({ state, new_events, user }: ContextInput): DeltaOp[] {
     const ops: DeltaOp[] = [];
@@ -30,23 +42,24 @@ export class DeterministicProvider implements ContextProvider {
       const question = /^Question:\s*(.+\?)$/i.exec(text);
       const answer = /^Answer:\s*(.+\?)\s*=>\s*(.+)$/i.exec(text);
       if (topic) ops.push({ op: 'set_topic', text: topic[1]!, ...evidence });
-      else if (decision) ops.push({ op: 'add_decision', text: decision[1]!, ...evidence });
+      else if (decision) ops.push({ op: 'add_decision', ...decisionContent(decision[1]!, event.id), ...evidence });
       else if (correction) {
         const previous = state.decisions.find(item => !item.superseded_by && contextKey(item.text) === contextKey(correction[1]!));
-        if (previous) ops.push({ op: 'add_decision', text: correction[2]!, supersedes_id: previous.id, ...evidence });
+        if (previous) ops.push({ op: 'add_decision', ...decisionContent(correction[2]!, event.id), supersedes_id: previous.id, ...evidence });
       } else if (question) ops.push({ op: 'open_question', text: question[1]!, ...evidence });
       else if (answer) {
         const previous = state.questions.find(item => !item.resolution && contextKey(item.text) === contextKey(answer[1]!));
         if (previous) ops.push({ op: 'resolve_question', question_id: previous.id, text: answer[2]!, ...evidence });
       } else if (isExplicitAddress(text, user) && /\?\s*$/.test(text) && /\byou\b/i.test(text)) {
-        ops.push({ op: 'open_question', text, ...evidence });
-        ops.push({ op: 'add_user_request', text, ...evidence });
+        const kind = workRequest.test(text) ? 'task' : 'question';
+        if (kind === 'question') ops.push({ op: 'open_question', text, ...evidence });
+        ops.push({ op: 'add_user_request', kind, text, ...evidence });
       } else {
         // Explicit assignments ABOUT the configured user are context, not alerts.
         const normalized = normalizeText(text);
         if ([user.name, ...user.aliases].map(normalizeText).filter(Boolean)
           .some(name => normalized.startsWith(`${name} will `))) {
-          ops.push({ op: 'add_user_request', text, ...evidence });
+          ops.push({ op: 'add_user_request', kind: 'task', text, ...evidence });
         }
       }
     }

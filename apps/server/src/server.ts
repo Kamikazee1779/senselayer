@@ -4,7 +4,7 @@ import {
   CatchupRequestSchema, CatchupAckRequestSchema,
   AttentionAckRequestSchema, AttentionAckParamsSchema, ResetRequestSchema, LiveTranscriptSchema,
 } from '@senselayer/shared';
-import { InMemoryStore, SemanticBatchError } from './state.js';
+import { InMemoryStore, SemanticBatchError, RequestLifecycleError } from './state.js';
 import { createTranscriptionSession } from './transcription.js';
 
 async function readBody(request: IncomingMessage): Promise<unknown> {
@@ -27,6 +27,10 @@ export function createApp(store = new InMemoryStore(), connectTranscription = cr
         send(response, 200, store.getState());
         return;
       }
+      if (request.method === 'GET' && path === '/session') {
+        send(response, 200, store.getSession());
+        return;
+      }
       if (request.method !== 'POST') {
         send(response, 404, { error: 'Not found' });
         return;
@@ -35,12 +39,15 @@ export function createApp(store = new InMemoryStore(), connectTranscription = cr
       if (path === '/transcript') {
         if (typeof body === 'object' && body !== null && 'source' in body) {
           const event = LiveTranscriptSchema.parse(body);
-          send(response, 200, await store.ingestFinalized([{
+          send(response, 200, store.acceptFinalized([{
             ...event, timestamp: event.receivedAt, speaker: 'Microphone',
           }]));
         } else {
-          send(response, 200, await store.submit(body));
+          send(response, 200, store.accept(body));
         }
+      } else if (path === '/analysis/retry') {
+        CatchupRequestSchema.parse(body);
+        send(response, 200, store.retryAnalysis());
       } else if (path === '/transcription/session') {
         const { sdp } = z.object({ sdp: z.string().startsWith('v=0').max(65536) }).strict().parse(body);
         response.setHeader('Cache-Control', 'no-store');
@@ -63,6 +70,11 @@ export function createApp(store = new InMemoryStore(), connectTranscription = cr
         const { id } = AttentionAckParamsSchema.parse({ id: path.split('/')[2] });
         const result = store.acknowledgeAttention(id);
         send(response, result ? 200 : 404, result ?? { error: 'User request not found' });
+      } else if (/^\/attention\/[^/]+\/complete$/.test(path)) {
+        AttentionAckRequestSchema.parse(body);
+        const { id } = AttentionAckParamsSchema.parse({ id: path.split('/')[2] });
+        const result = store.completeRequest(id);
+        send(response, result ? 200 : 404, result ?? { error: 'User request not found' });
       } else if (path === '/reset') {
         ResetRequestSchema.parse(body);
         send(response, 200, store.reset());
@@ -72,6 +84,8 @@ export function createApp(store = new InMemoryStore(), connectTranscription = cr
     } catch (error) {
       if (error instanceof SemanticBatchError) {
         send(response, 503, { error: error.message });
+      } else if (error instanceof RequestLifecycleError) {
+        send(response, 409, { error: error.message });
       } else if (error instanceof ZodError || error instanceof SyntaxError) {
         send(response, 400, { error: 'Invalid request' });
       } else {

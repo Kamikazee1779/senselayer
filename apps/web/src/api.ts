@@ -1,4 +1,4 @@
-import { StateResponseSchema, TranscriptResponseSchema, CatchupResponseSchema, CatchupAckResponseSchema, AttentionAckResponseSchema, ResetResponseSchema, type TranscriptRequest, type LiveTranscript } from '@senselayer/shared';
+import { SessionResponseSchema, TranscriptResponseSchema, CatchupResponseSchema, CatchupAckResponseSchema, AttentionAckResponseSchema, ResetResponseSchema, type TranscriptRequest, type LiveTranscript } from '@senselayer/shared';
 
 async function request<T>(path: string, schema: { parse(value: unknown): T }, body?: unknown): Promise<T> {
   const response = await fetch(`/api${path}`, { signal: AbortSignal.timeout(15000), ...(body === undefined ? {} : {
@@ -9,11 +9,13 @@ async function request<T>(path: string, schema: { parse(value: unknown): T }, bo
   catch { throw new Error('The server response could not be read. Please try again.'); }
 }
 export const api = {
-  state: () => request('/state', StateResponseSchema),
+  session: () => request('/session', SessionResponseSchema),
   transcript: (body: TranscriptRequest) => request('/transcript', TranscriptResponseSchema, body),
   liveTranscript: (body: LiveTranscript) => request('/transcript', TranscriptResponseSchema, body),
+  retryAnalysis: () => request('/analysis/retry', SessionResponseSchema, {}),
   catchup: () => request('/catchup', CatchupResponseSchema, {}),
   catchupAck: (id: string) => request('/catchup/ack', CatchupAckResponseSchema, { catchup_id: id }),
   attentionAck: (id: string) => request(`/attention/${encodeURIComponent(id)}/ack`, AttentionAckResponseSchema, {}),
+  completeRequest: (id: string) => request(`/attention/${encodeURIComponent(id)}/complete`, AttentionAckResponseSchema, {}),
   reset: () => request('/reset', ResetResponseSchema, {}),
 };

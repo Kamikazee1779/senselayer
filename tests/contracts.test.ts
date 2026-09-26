@@ -19,7 +19,9 @@ for (const name of ['topic-and-decision', 'question-resolution', 'user-request']
     };
     const store = new InMemoryStore(() => timestamp);
     for (const batch of fixture.batches) store.ingest({ events: batch.events }, () => batch.ops);
-    assert.deepEqual(store.getState(), ContextStateSchema.parse(fixture.expected));
+    const expected = ContextStateSchema.parse(fixture.expected);
+    expected.user_requests.forEach(request => { request.kind ??= request.question_id ? 'question' : 'task'; });
+    assert.deepEqual(store.getState(), expected);
   });
 }
 

@@ -125,3 +125,64 @@ dialog::backdrop { background: #172c2669; }
   .dialog-footer { flex-direction: column; align-items: stretch; }
   .dialog-footer button { order: -1; }
 }
+
+/* Recovery remains in the document: the transcript continues beside it. */
+.preferences { display: flex; align-items: center; flex-wrap: wrap; gap: 20px; padding-bottom: 8px; }
+.preferences label { font-size: 14px; }
+.checkbox-label { flex-direction: row; align-items: center; font-weight: 500; gap: 8px; }
+.checkbox-label input { accent-color: #24543f; width: 20px; height: 20px; }
+.session-identity { color: #46594d; font-size: 14px; }
+.processing-status { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-bottom: 18px; color: #45594c; font-size: 14px; }
+.catchup-panel { border: 2px solid #416d53; border-radius: 14px; background: #fff; margin-bottom: 24px; overflow: hidden; }
+.catchup-panel .dialog-header { padding: 20px 24px; }
+.catchup-content { padding: 20px 24px; }
+.catchup-group { margin-top: 20px; }
+.catchup-group h3 { font-size: 13px; }
+.catchup-group li > p, .older-questions li > p { font-size: calc(20px * var(--reader-scale, 1)); line-height: 1.45; }
+.catchup-group li > .previous { font-size: calc(16px * var(--reader-scale, 1)); color: #58635e; margin-bottom: 4px; }
+.catchup-group li > .rationale { font-size: calc(17px * var(--reader-scale, 1)); margin-top: 6px; }
+.snapshot-status { margin-top: 12px; font-size: 14px; font-weight: 550; color: #36573f; }
+.refresh-catchup { min-height: 44px; margin-top: 4px; padding-left: 0; }
+.older-questions, .all-changes { margin-top: 16px; border-top: 1px solid #d8ded6; }
+.older-questions li + li, .all-changes li + li { margin-top: 16px; }
+.all-changes ol { padding-left: 24px; }
+.all-changes li > p { font-size: calc(17px * var(--reader-scale, 1)); }
+.requests { border: 1px solid #c5d2c4; border-radius: 12px; margin-bottom: 24px; padding: 18px 20px; background: #fafbf7; }
+.requests > .muted { margin-top: 5px; }
+.requests ul { list-style: none; padding: 0; margin: 12px 0 0; }
+.request-row { display: flex; gap: 20px; align-items: start; justify-content: space-between; padding: 12px 0; }
+.request-row + .request-row { border-top: 1px solid #d8ded6; }
+.request-row.priority-card { padding: 12px 16px; margin-bottom: 8px; }
+.request-copy { min-width: 0; flex: 1; }
+.request-text { font-size: calc(19px * var(--reader-scale, 1)); line-height: 1.45; margin: 0 0 5px; }
+.request-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.request-actions button { padding: 8px 14px; }
+.utterances p { font-size: calc(22px * var(--reader-scale, 1)); }
+blockquote p { font-size: calc(17px * var(--reader-scale, 1)); }
+.transcript-footer button { min-height: 44px; }
+.catchup-panel .close-button { min-width: 46px; }
+@media (min-width: 1000px) {
+  main:has(.catchup-panel) { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); column-gap: 24px; }
+  main:has(.catchup-panel) > * { grid-column: 1 / -1; }
+  main:has(.catchup-panel) > .catchup-panel { grid-column: 1; grid-row: span 3; }
+  main:has(.catchup-panel) > .conversation { grid-column: 2; align-self: start; position: sticky; top: 16px; }
+  main:has(.catchup-panel) > .requests { grid-column: 2; }
+  main:has(.catchup-panel) > .demo-controls { grid-column: 2; }
+  .catchup-panel .dialog-footer { flex-direction: column; align-items: stretch; gap: 12px; }
+  .catchup-panel .dialog-footer button { order: -1; }
+}
+@media (max-width: 760px) {
+  .mic-note { display: inline; }
+  .preferences { align-items: flex-start; gap: 14px; }
+  .request-row { flex-direction: column; gap: 8px; }
+  .request-actions { align-self: stretch; }
+  .requests { padding: 16px; }
+  .catchup-panel .dialog-header, .catchup-content { padding: 18px; }
+  .dialog-header h2 { font-size: 24px; }
+}
+.preferences-disclosure { margin-bottom: 4px; }
+.preferences-disclosure > summary { color: #36573f; width: fit-content; }
+.preferences-disclosure[open] { padding-bottom: 12px; }
+.app-header { min-height: 88px; }
+.intro { padding-top: 30px; padding-bottom: 25px; }
+.catchup-panel { align-self: start; }
