@@ -176,8 +176,8 @@ export function App() {
     <a className="skip-link" href="#conversation">Skip to conversation</a>
     <header className="app-header">
       <span className="brand"><span aria-hidden="true">≋</span> SenseLayer</span>
-      <div hidden className="mode-switch" aria-label="Conversation mode">
-        <button hidden aria-pressed={mode === 'demo'} disabled={!connected || busy('session') || demoPlaying} onClick={chooseDemo} title="Start a new sample conversation">Demo</button>
+      <div className="mode-switch" aria-label="Conversation mode">
+        <button aria-pressed={mode === 'demo'} disabled={!connected || busy('session') || demoPlaying} onClick={chooseDemo} title="Start a new sample conversation">Demo</button>
         <button aria-pressed={mode === 'live'} disabled={!connected || busy('session')} onClick={chooseLive}>Live</button>
       </div>
       <button className="icon-button reset" aria-label="Reset session" title="Clear conversation and stop microphone" disabled={!connected || busy('session')} onClick={() => {
