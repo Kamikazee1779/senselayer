@@ -70,6 +70,7 @@ export class LiveMicrophone {
   constructor(
     private readonly status: (state: MicrophoneState, error?: string) => void,
     private readonly onFinal: (event: LiveTranscript) => Promise<void>,
+    private readonly onDevice: (name: string) => void = () => {},
   ) {}
 
   async start() {
@@ -83,6 +84,7 @@ export class LiveMicrophone {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       if (this.closed) { stream.getTracks().forEach(track => track.stop()); return; }
       this.stream = stream;
+      this.onDevice(stream.getAudioTracks()[0]?.label || 'Name unavailable');
       this.chunkStartedMs = Date.now();
       this.audio = new AudioContext();
       await this.audio.resume();
