@@ -6,7 +6,7 @@ import {
 } from '../packages/shared/src/index.js';
 import { InMemoryStore, emptyState } from '../apps/server/src/state.js';
 import { DeterministicProvider, type ContextProvider } from '../apps/server/src/provider.js';
-import { isExplicitAddress } from '../apps/server/src/vocative.js';
+import { continuingAddress, isExplicitAddress } from '../apps/server/src/vocative.js';
 import { replay } from '../apps/server/src/replay.js';
 
 const user = { name: 'Emilio', aliases: ['Emi', 'E. M.'] };
@@ -18,6 +18,20 @@ const gate = () => {
   const promise = new Promise<void>(resolve => { release = resolve; });
   return { promise, release };
 };
+
+test('backend instance IDs distinguish restarts while reset keeps revisions in the same instance', () => {
+  const first = new InMemoryStore(now);
+  const second = new InMemoryStore(now);
+  assert.ok(first.getSession().instance_id);
+  assert.notEqual(first.getSession().instance_id, second.getSession().instance_id);
+  const instance = first.getSession().instance_id;
+  const receipt = first.ingest({ events: [{ speaker: 'Ari', text: 'Hello.' }] });
+  assert.equal(receipt.instance_id, instance);
+  const revision = first.getSession().revision;
+  first.reset();
+  assert.equal(first.getSession().instance_id, instance);
+  assert.ok(first.getSession().revision > revision);
+});
 
 test('explicit vocatives recognize exact configured names and aliases', () => {
   for (const text of [
@@ -35,6 +49,27 @@ test('ordinary mentions, third-person assignments and near names never interrupt
     'Emilion, can you help?', 'Emilio2?', 'Emillio?', 'Emilio said, "can you help?"',
     'He asked, "Hey Emilio"', 'Emilio could help', 'Hey Emilio said hello',
   ]) assert.equal(isExplicitAddress(text, user), false, text);
+});
+
+test('a standalone summons can continue into the next direct request, within a bounded interval', () => {
+  const call = event('call', 'Emilio.');
+  const request = { ...event('request', 'Can you please load the dishwasher'), timestamp: '2026-09-25T12:00:03.000Z' };
+  assert.deepEqual(continuingAddress([call, request], [request], user), { address_event_id: 'call', request_event_id: 'request' });
+  for (const text of ['Emi?', 'Hey Emilio!']) {
+    assert.ok(continuingAddress([{ ...call, text }, request], [request], user));
+  }
+  for (const text of ['Hi Emilio', 'Hi Emilio, good to see you.', 'I spoke with Emilio.', 'Emilio said hello.', 'Alexandra.', 'Emillio.']) {
+    assert.equal(continuingAddress([{ ...call, text }, request], [request], user), undefined, text);
+  }
+  for (const altered of [
+    { ...request, timestamp: '2026-09-25T12:00:16.000Z' },
+    { ...request, timestamp: '2026-09-25T11:59:59.000Z' },
+    { ...request, speaker: 'Another participant' },
+    { ...request, text: 'Which room is the meeting in?' },
+    { ...request, text: 'Alexandra, can you load the dishwasher?' },
+  ]) assert.equal(continuingAddress([call, altered], [altered], user), undefined);
+  assert.equal(continuingAddress([call, event('intervening', 'Hello.'), request], [request], user), undefined);
+  assert.equal(continuingAddress([request], [request], user), undefined);
 });
 
 test('explicit address is immediate even while semantics waits; assignments produce no alert', async () => {

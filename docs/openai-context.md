@@ -6,6 +6,17 @@ The model receives active semantic state (including seen but unfinished tasks), 
 
 OpenAI and Claude share the conversational relevance rules in `conversation-policy.ts`. Ordinary reciprocal small talk stays in the transcript instead of becoming a persistent question or personal request. Substantive questions about assistance, accessibility or choices remain eligible. A nearby earlier name mention does not establish the recipient of a later generic question, and a question already answered within the same transcript chunk must not remain open. Provisional `kind=attention` calls still need semantic classification when they contain real work or a substantive question.
 
+Speech recognition can split “Emilio.” and “Can you please load the dishwasher”
+into two events. The adapters supply a `continuing_address` candidate when a
+standalone name/“Hey name” call is immediately followed by a direct second-person
+request, within 15 seconds and with matching speaker labels. The model reads
+both sources and can enrich the original alert into a task, citing both IDs.
+It must reject the link when the name answered an earlier question, the request
+targets someone else, or context makes it ambiguous. Neutral speaker labels
+are not proof of identity. Ordinary mentions, greetings, intervening speech and
+stale calls do not qualify. Multiple requests in one finalized chunk remain
+separate; only the provisional attention entry can be enriched by shared source.
+
 The SDK's strict schema requires nullable optional reference fields; the adapter removes null references and passes proposals through the existing `parseDeltaOps`. Every citation must exist and at least one must belong to the new batch. The reducer still validates and owns all mutations, IDs, timestamps, lifecycles, supersession and watermarks. Requests have a 15-second SDK timeout and no automatic SDK retries. Existing application retry/cursor behavior is unchanged. API refusals, incomplete output, invalid JSON/schema/evidence and errors fail the batch.
 
 ## Real-provider smoke test
@@ -44,6 +55,9 @@ For semantic quality, run the optional real-provider regression cases separately
 pnpm eval:context
 # Run only the original greeting regression:
 pnpm eval:context social-reciprocity
+# The exact dishwasher request and its split-transcript variant:
+pnpm eval:context personal-household-task
+pnpm eval:context split-direct-task
 ```
 
 This command loads the root `.env`, requires `CONTEXT_PROVIDER=openai` or `claude`,

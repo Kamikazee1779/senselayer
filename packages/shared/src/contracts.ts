@@ -148,6 +148,7 @@ export const ProcessingSchema = z.object({
 }).strict();
 export type Processing = z.infer<typeof ProcessingSchema>;
 export const SessionResponseSchema = z.object({
+  instance_id: IdSchema.optional(),
   state: ContextStateSchema,
   events: z.array(TranscriptEventSchema),
   processing: ProcessingSchema,
@@ -159,6 +160,7 @@ export const SessionResponseSchema = z.object({
 }).strict();
 export type SessionResponse = z.infer<typeof SessionResponseSchema>;
 export const TranscriptResponseSchema = z.object({
+  instance_id: IdSchema.optional(),
   new_events: z.array(TranscriptEventSchema),
   state: ContextStateSchema,
   attention: z.array(IdSchema).optional(),

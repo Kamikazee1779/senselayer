@@ -9,6 +9,7 @@ This is a shorter live alternative to [the extended judges’ recording](demo-gi
 - Project the app at a readable size, with notifications and “I missed that” visible.
 - Use English and configure Emilio as the user. Rehearse with the real semantic
   provider: this free-form script is not a deterministic mock fixture.
+- Set `CONTEXT_PROVIDER=openai` and restart the backend after changing the configuration.
 - Start a fresh Live session. Keep the microphone off during the introduction.
 - Prepare a separate code window for Emilio to check and set moderate brightness,
   so the request below leads to a visible action.
@@ -117,7 +118,7 @@ Keep the app on screen for most of the presentation. Give the catch-up result
 five to ten seconds of quiet attention; it is the central moment of the demo.
 Use the actual result to guide the explanation, rather than reading every card.
 
-Save architecture, speaker recognition details and additional features for
+Save deeper architecture and speaker recognition details for
 questions. The main demonstration is complete when Emilio understands the new
 plan and contributes again. This scripted scenario demonstrates prototype
 behavior; it is not a usability result with Deaf or hard-of-hearing participants.

@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { DeltaOpSchema, IdSchema, parseDeltaOps, requestStatus } from '@senselayer/shared';
 import type { ContextInput, ContextProvider } from './provider.js';
 import { conversationPolicy } from './conversation-policy.js';
+import { continuingAddress } from './vocative.js';
 
 // Strict structured output requires every property. Nullable references exist
 // only on the provider wire; null is omitted before application validation.
@@ -76,11 +77,13 @@ export class OpenAIContextProvider implements ContextProvider {
     };
     const newIds = new Set(input.new_events.map(event => event.id));
     const older_context = input.transcript.filter(event => !newIds.has(event.id)).slice(-40);
+    const continuing_address = continuingAddress(input.transcript, input.new_events, input.user);
     const response = await this.client.responses.parse({
       model: this.model, store: false, max_output_tokens: 4096,
       instructions,
       input: [{ role: 'user', content: JSON.stringify({
         active_state, older_context, new_events: input.new_events, user: input.user,
+        ...(continuing_address ? { continuing_address } : {}),
       }) }],
       text: { format: zodTextFormat(OutputSchema, 'semantic_delta_ops') },
     });

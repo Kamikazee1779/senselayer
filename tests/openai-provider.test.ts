@@ -79,6 +79,28 @@ test('OpenAI receives active state, bounded older context and an explicit unchan
   assert.deepEqual(context, before);
 });
 
+test('a split direct request reaches OpenAI with both sources and enriches the original call into a task', async () => {
+  const provider = new OpenAIContextProvider('key', undefined, async (_url, init) => {
+    const sent = JSON.parse(JSON.parse(String(init?.body)).input[0].content);
+    const current = sent.new_events[0];
+    if (current.text === 'Emilio.') return output([]);
+    assert.deepEqual(sent.continuing_address, { address_event_id: 'call', request_event_id: 'request' });
+    assert.equal(sent.older_context[0].text, 'Emilio.');
+    return output([{ op: 'add_user_request', text: 'Load the dishwasher.', kind: 'task', question_id: null,
+      event_ids: [sent.continuing_address.address_event_id, current.id] }]);
+  });
+  const store = new InMemoryStore(() => stamp, provider);
+  await store.ingestFinalized([{ ...event('call', 'Emilio.'), speaker: 'Microphone' }]);
+  const call = store.getState().user_requests[0]!;
+  await store.ingestFinalized([{ ...event('request', 'Can you please load the dishwasher'), speaker: 'Microphone', timestamp: '2026-09-25T12:00:03.000Z' }]);
+  assert.equal(store.getState().user_requests.length, 1);
+  const task = store.getState().user_requests[0]!;
+  assert.equal(task.id, call.id);
+  assert.equal(task.kind, 'task');
+  assert.deepEqual(task.event_ids, ['call', 'request']);
+  assert.equal(task.resolved_at, undefined);
+});
+
 test('OpenAI rejects malformed, incomplete, refused, illegal and fabricated-evidence output', async () => {
   const cases = [
     () => response('not JSON'),

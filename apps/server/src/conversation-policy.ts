@@ -12,6 +12,20 @@ For add_user_request, cited speech must establish that the configured user is th
 An earlier mention of their name does not make every later "you" a request to that user. Do not guess
 the recipient from proximity, alternating turns or an assumed speaker identity. When the recipient is
 unclear, retain a substantive group question as open_question only, without a personal user request.
+continuing_address, when present, identifies a standalone direct call immediately followed by a
+second-person request in a separate transcript event, within 15 seconds and with the same speaker label.
+This can be one spoken request split by speech recognition: "Emilio." then "Can you please load the dishwasher".
+Read those events with their surrounding speech. This is a continuation candidate, not proof of speaker
+identity or recipient: labels such as Microphone or Conversation may cover different speakers. If the name
+answers a preceding question ("Who will present?" / "Emilio."), or the new speech explicitly addresses
+someone else ("Can you load the dishwasher, Alexandra?"), do not bind the request to the earlier name.
+When it is a direct call followed by its substantive request, use that explicit addressee and cite BOTH
+address_event_id and request_event_id in add_user_request.
+For that example emit kind=task, not just a question or the existing attention signal; household work counts
+as a task just like project work. Use the request's actual words for its meaning.
+The candidate does not prove a task exists: hypothetical, quoted or cancelled requests and small talk still
+require conservative interpretation. Without continuing_address, do not carry an earlier standalone call
+across separate events based only on proximity. A name mention or greeting never supplies this candidate.
 Examples: "Which room is the meeting in?" is a general question; "Emilio, which room should we use?"
 is a personal question when Emilio is the configured user; "Emilio, can you read the captions?" is a
 substantive accessibility question, not small talk. "Emilio, can you test login?" is a task request.
