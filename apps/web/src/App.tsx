@@ -245,7 +245,15 @@ return <>
       </main>
       <footer className="app-footer"><span>Quiet by default. Relevant when needed.</span>
         <details className="debug"><summary>Developer / debug</summary><div className="debug-body">
-          <h2>Developer state</h2><dl><dt>Mode</dt><dd>{replayState}; microphone {micState}</dd><dt>Last state received</dt><dd>{updated ?? 'Not yet'}</dd><dt>Last action round trip</dt><dd>{elapsed === null ? 'Not yet' : `${elapsed} ms`}</dd><dt>DeltaOps</dt><dd>Raw proposals not exposed by this API</dd><dt>Unseen indicator baseline</dt><dd>{seen.size} semantic items acknowledged in this browser session; catch-up itself uses the backend watermark</dd></dl>
+          <div className="control-row">
+              <button className="secondary" onClick={() => void enableNotifications()}>
+                Enable notifications
+              </button>
+              <button className="secondary" onClick={() => void sendTestNotification()}>
+                Send test notification
+              </button>
+            </div>
+            <h2>Developer state</h2><dl><dt>Mode</dt><dd>{replayState}; microphone {micState}</dd><dt>Last state received</dt><dd>{updated ?? 'Not yet'}</dd><dt>Last action round trip</dt><dd>{elapsed === null ? 'Not yet' : `${elapsed} ms`}</dd><dt>DeltaOps</dt><dd>Raw proposals not exposed by this API</dd><dt>Unseen indicator baseline</dt><dd>{seen.size} semantic items acknowledged in this browser session; catch-up itself uses the backend watermark</dd></dl>
           <h3>ContextState · includes evidence IDs</h3><pre>{JSON.stringify(state, null, 2)}</pre><h3>Received transcript events</h3><pre>{JSON.stringify(events, null, 2)}</pre>
           <h3>Last catch-up · watermark and applied semantic changes</h3><pre>{JSON.stringify(lastCatchup, null, 2)}</pre>
         </div></details>
